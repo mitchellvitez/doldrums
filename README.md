@@ -1,7 +1,8 @@
 # Doldrums
 
->You can swim all day in the Sea of Knowledge and not get wet.
---- Norton Juster
+&ldquo;You can swim all day in the Sea of Knowledge and not get wet.&rdquo;
+
+&ndash; Norton Juster
 
 ## About the project
 
@@ -16,7 +17,67 @@
 - How?
   - The compiler is written in Haskell. Run `stack run test.dol` to see an example.
 
+### Structure
+
+I wrote the parsing using [Megaparsec](https://hackage.haskell.org/package/megaparsec).
+
+The `run` function performs each stage of the compilation pipeline. In order, it parses a small prelude (written in Doldrums), reads an input file, parses, evaluates, and shows the program results.
+
 ## The Doldrums language
+
+Doldrums is purely functional, which means that all values are immutable. It's also lazy, tiny, and pretty useless in the real world.
+
+### Comments
+
+```
+-- Line comments look like this
+```
+
+```
+/* Block comments
+   look like this */
+```
+
+### Writing a program
+
+A program is a list of functions. A function has a name, a list of arguments, and a body.
+
+```
+id x = x;
+const x y = x;
+```
+
+You can define constants using a "function" with no arguments.
+```
+seven = 7;
+```
+
+Every program has a main function. This is what runs when the program starts.
+```
+main = const 6 7;
+```
+
+### Let expressions
+
+You can define variables to be used in an expression with `let`...`in`
+```
+let n = 0 in n
+```
+
+Multiple definitions should be separated by commas
+```
+let a = 1, b = 2, c = 3
+in a * b * c
+```
+
+Because Doldrums is lazy, you can define your variables in any order
+```
+let x = z
+  , y = 7
+  , z = y
+in
+  x
+```
 
 ### Operator Precedence
 
@@ -35,9 +96,11 @@ Precedence | Associativity | Operators
 3          |               | >=
 3          |               | <
 3          |               | <=
-2          | right         | &
-1          | right         | |
+2          | right         | &&
+1          | right         | \|\|
 
-### How can I do this?
+## How can I do this?
 
 I learned this material from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial) with help from a few friends.
+
+I can be your friend if you want help understanding this project: [mitchell@vitez.me](mailto:mitchell@vitez.me)
