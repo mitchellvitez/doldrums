@@ -1,0 +1,49 @@
+name:                doldrums
+version:             0.1.0.0
+github:              "mitchellvitez/doldrums"
+author:              "Mitchell Vitez"
+maintainer:          "mitchell@vitez.me"
+copyright:           "2020 Mitchell Vitez"
+
+extra-source-files:
+- README.md
+
+synopsis:            A small, purely functional programming language.
+
+description:         Please see the README on GitHub at <https://github.com/mitchellvitez/doldrums#readme>
+
+dependencies:
+- base       >= 4.7 && < 5
+- text       >= 1.2 && < 2
+- megaparsec >= 8.0 && < 9
+- hspec      >= 2.7 && < 3
+- containers >= 0.6 && < 1
+- heap       >= 1.0 && < 2
+
+library:
+  source-dirs: src
+
+executables:
+  doldrums-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - doldrums
+
+tests:
+  doldrums-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - doldrums
+
+default-extensions:
+  - OverloadedStrings
