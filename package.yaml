@@ -47,3 +47,4 @@ tests:
 
 default-extensions:
   - OverloadedStrings
+  - LambdaCase

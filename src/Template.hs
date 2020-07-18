@@ -18,10 +18,10 @@ type TiState = (TiStack, TiDump, TiHeap, TiGlobals, TiStats)
 
 type TiStack = [Addr]
 
-data TiDump = DummyTiDump
+type TiDump = [TiStack]
 
 initialTiDump :: TiDump
-initialTiDump = DummyTiDump
+initialTiDump = []
 
 type TiHeap = Heap Node
 
@@ -31,10 +31,14 @@ type TiGlobals = Assoc Text Addr
 
 data TiStats = TiStats Int
 
+data Primitive = Neg | Add | Sub | Mul | Div | Eq | Neq | Gt | Lt | Geq | Leq | And | Or
+  deriving Show
+
 data Node = NAp Addr Addr
           | NSupercomb Text [Text] CoreExpr
           | NNum Int
           | NInd Addr
+          | NPrim Name Primitive
 
 assocLookup :: Eq a => a -> Assoc a b -> Text -> b
 assocLookup _ [] errMsg = error $ show errMsg
@@ -50,12 +54,38 @@ compile prelude program = (initialStack, initialTiDump, initialHeap, globals, ti
     scDefs = program ++ prelude
 
 buildInitialHeap :: [CoreSupercombinatorDefinition] -> (TiHeap, TiGlobals)
-buildInitialHeap scDefs = mapAccumL allocateSc hInitial scDefs
+buildInitialHeap scDefs =
+  (heap2, scAddrs ++ primAddrs)
+  where
+    (heap1, scAddrs) = mapAccumL allocateSc hInitial scDefs
+    (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
+
+primitives :: Assoc Name Primitive
+primitives =
+  [ ("negate", Neg)
+  , ("+", Add)
+  , ("-", Sub)
+  , ("*", Mul)
+  , ("/", Div)
+  , ("==", Eq)
+  , ("!=", Neq)
+  , (">", Gt)
+  , ("<", Lt)
+  , (">=", Geq)
+  , ("<=", Leq)
+  , ("&&", And)
+  , ("||", Or)
+  ]
 
 allocateSc :: TiHeap -> CoreSupercombinatorDefinition -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
   where
     (heap', addr) = hAlloc heap (NSupercomb name args body)
+
+allocatePrim :: TiHeap -> (Name, Primitive) -> (TiHeap, (Name, Addr))
+allocatePrim heap (name, prim) =
+  (heap2, (name, addr))
+  where (heap2, addr) = hAlloc heap $ NPrim name prim
 
 eval :: TiState -> [TiState]
 eval state = state : restStates
@@ -84,13 +114,20 @@ step state@(stack, _, heap, _, _) =
     dispatch (NAp a1 a2)               = apStep state a1 a2
     dispatch (NSupercomb sc args body) = scStep state sc args body
     dispatch (NInd addr)               = indStep state addr
+    dispatch (NPrim name prim)         = primStep state prim
 
 numStep :: TiState -> Int -> TiState
-numStep _ n = error $ "Number applied as a function " ++ show n
+numStep (stack, stack2:dump, heap, globals, stats) n =
+  (stack2, dump, heap, globals, stats)
 
 apStep :: TiState -> Addr -> Addr -> TiState
-apStep (stack, dump, heap, globals, stats) a1 _ =
-  (a1 : stack, dump, heap, globals, stats)
+apStep (stack, dump, heap, globals, stats) a1 a2 =
+  apDispatch (hLookup heap a2)
+  where
+    apDispatch (NInd a3) = (stack, dump, heap2, globals, stats)
+      where heap2 = hUpdate heap apNode (NAp a1 a3)
+            apNode = head stack
+    apDispatch node = (a1 : stack, dump, heap, globals, stats)
 
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (stack, dump, heap, globals, stats) sc argNames body
@@ -104,6 +141,52 @@ scStep (stack, dump, heap, globals, stats) sc argNames body
 indStep :: TiState -> Addr -> TiState
 indStep (a : stack, dump, heap, globals, stats) a' =
   (a' : stack, dump, heap, globals, stats)
+
+-- data Primitive = Neg | Add | Sub | Mul | Div | Eq | Neq | Gt | Lt | Geq | Leq | And | Or
+primStep :: TiState -> Primitive -> TiState
+primStep state Neg = primUnary state negateNode
+  where negateNode (NNum x) = (NNum (-x))
+primStep state op = primBinary state $ case op of
+  Add -> \(NNum a) (NNum b) -> (NNum $ a + b)
+  Sub -> \(NNum a) (NNum b) -> (NNum $ a - b)
+  Mul -> \(NNum a) (NNum b) -> (NNum $ a * b)
+  Div -> \(NNum a) (NNum b) -> (NNum $ a `div` b)
+  Eq  -> \(NNum a) (NNum b) -> (NNum $ if a == b then 1 else 0) -- TODO: introduce real booleans
+  Neq -> \(NNum a) (NNum b) -> (NNum $ if a /= b then 1 else 0)
+  Gt  -> \(NNum a) (NNum b) -> (NNum $ if a > b then 1 else 0)
+  Lt  -> \(NNum a) (NNum b) -> (NNum $ if a < b then 1 else 0)
+  Geq -> \(NNum a) (NNum b) -> (NNum $ if a >= b then 1 else 0)
+  Leq -> \(NNum a) (NNum b) -> (NNum $ if a <= b then 1 else 0)
+  And -> \(NNum a) (NNum b) -> (NNum $ if a /= 0 && b /= 0 then 1 else 0)
+  Or -> \(NNum a) (NNum b) -> (NNum $ if a /= 0 || b /= 0 then 1 else 0)
+
+primUnary :: TiState -> (Node -> Node) -> TiState
+primUnary (stack, dump, heap, globals, stats) op
+  | length args /= 1 = error $ "wrong number of args for unary operator"
+  | not (isDataNode argNode) = ([argAddr], newStack:dump, heap, globals, stats)
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+  where
+    args = getArgs heap stack
+    [argAddr] = args
+    argNode = hLookup heap argAddr
+    newStack = drop 1 stack
+    rootOfRedex = head newStack
+    newHeap = hUpdate heap rootOfRedex $ op argNode
+
+primBinary :: TiState -> (Node -> Node -> Node) -> TiState
+primBinary (stack, dump, heap, globals, stats) op
+  | length args /= 2 = error $ "wrong number of args for binary operator"
+  | not (isDataNode arg1Node) = ([arg1addr], newStack:dump, heap, globals, stats)
+  | not (isDataNode arg2Node) = ([arg2addr], newStack:dump, heap, globals, stats)
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+  where
+    args = getArgs heap stack
+    [arg1addr, arg2addr] = args
+    arg1Node = hLookup heap arg1addr
+    arg2Node = hLookup heap arg2addr
+    newStack = drop 2 stack
+    rootOfRedex = head newStack
+    newHeap = hUpdate heap rootOfRedex $ op arg1Node arg2Node
 
 getArgs :: TiHeap -> TiStack -> [Addr]
 getArgs heap (_ : stack) = map getArg stack
@@ -172,7 +255,7 @@ showFinalStack heap stack = Text.intercalate "\n" (map showFinalStackItem stack)
   where showFinalStackItem addr = showFinalNode $ hLookup heap addr
 
 showState :: TiState -> Text
-showState (stack, _, heap, _, _) = Text.concat [showStack heap stack, "\n"]
+showState (stack, dump, heap, _, _) = Text.concat [showStack heap stack, "\n", showDump dump, "\n"]
 
 showStack :: TiHeap -> TiStack -> Text
 showStack heap stack = Text.concat [
@@ -183,6 +266,9 @@ showStack heap stack = Text.concat [
   where
     showStackItem addr = Text.concat [ showFWAddr addr, ": ",
                                    showStkNode heap (hLookup heap addr)]
+
+showDump :: TiDump -> Text
+showDump dump = "Dump depth " <> tshow (length dump)
 
 showStkNode :: TiHeap -> Node -> Text
 showStkNode heap (NAp funAddr argAddr) =
@@ -199,12 +285,14 @@ showNode (NAp a1 a2) = Text.concat ["NAp ", showAddr a1, " ", showAddr a2]
 showNode (NSupercomb name _ _) = "NSupercomb " <> name
 showNode (NNum n) = "NNum " <> tshow n
 showNode (NInd addr) = "NInd " <> tshow addr
+showNode (NPrim name prim) = "NPrim " <> name
 
 showFinalNode :: Node -> Text
 showFinalNode (NAp a1 a2) = Text.concat ["<application:", showAddr a1, ",", showAddr a2, ">"]
 showFinalNode (NSupercomb name _ _) = "<combinator:" <> name <> ">"
 showFinalNode (NInd addr) = "<indirection:" <> tshow addr <> ">"
 showFinalNode (NNum n) = tshow n
+showFinalNode (NPrim name prim) = "<primitive:(" <> name <> ")>"
 
 showAddr :: Addr -> Text
 showAddr addr = tshow addr

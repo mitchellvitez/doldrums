@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 02c12a1387924e8dcb68ccb43a3d3351dd8bfe47ee692f94be04b2e962adcd18
+-- hash: c37804fdc7fa110810edc8f3e392968df5c9c75bb394298a3d6e8c39c317c03d
 
 name:           doldrums
 version:        0.1.0.0
@@ -34,7 +34,7 @@ library
       Paths_doldrums
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings
+  default-extensions: OverloadedStrings LambdaCase
   build-depends:
       base >=4.7 && <5
     , containers >=0.6 && <1
@@ -50,7 +50,7 @@ executable doldrums-exe
       Paths_doldrums
   hs-source-dirs:
       app
-  default-extensions: OverloadedStrings
+  default-extensions: OverloadedStrings LambdaCase
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
@@ -69,7 +69,7 @@ test-suite doldrums-test
       Paths_doldrums
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings
+  default-extensions: OverloadedStrings LambdaCase
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
