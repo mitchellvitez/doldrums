@@ -57,6 +57,20 @@ Every program has a main function. This is what runs when the program starts.
 main = const 6 7;
 ```
 
+### The $ operator
+
+Because it has the lowest precedence, you can use `$` to replace parentheses in certain situations, for cleaner code. For example, 
+
+```
+main = f (g (h x));
+```
+
+is equivalent to
+
+```
+main = f $ g $ h x;
+```
+
 ### Let expressions
 
 You can define variables to be used in an expression with `let`...`in`
@@ -83,7 +97,7 @@ in
 
 Higher numbers mean higher precedence. All operators are binary (they have both a left and a right hand side).
 
-Precedence | Associativity | Operators
+Precedence | Associativity | Operator
 -----------|---------------|---------
 6          | left          | _function application_
 5          | right         | *
@@ -98,6 +112,7 @@ Precedence | Associativity | Operators
 3          |               | <=
 2          | right         | &&
 1          | right         | \|\|
+0          | right         | $
 
 ## How can I do this?
 

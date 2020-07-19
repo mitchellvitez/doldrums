@@ -1,14 +1,23 @@
-three = 3;
-four = ((1 + 6 - 2) * 4) / 5;
+/* three = 3; */
+/* four = ((1 + 6 - 2) * 4) / 5; */
 
-pair x y f = f x y;
-fst p = p K;
-snd p = p K1;
+/* pair x y f = f x y; */
+/* fst p = p K; */
+/* snd p = p K1; */
 
-f x y =
-  let a = pair x b
-    , b = pair y a
-  in
-    fst (snd (snd (snd a)));
+/* f x y = */
+/*   let a = pair x b */
+/*     , b = pair y a */
+/*   in */
+/*     fst (snd (snd (snd a))); */
 
-main = f three four;
+/* main = f three four; */
+
+main = negate $ negate 3;
+
+/* -- test these */
+/* main = negate (I 3); -- indirection */
+/* main = addOne $ 3; */
+/* addOne x = x + 1; */
+/* main = 3; */
+/* main = negate 3; */

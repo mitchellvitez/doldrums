@@ -2,8 +2,9 @@
 
 import Language
 import Parse
-import Eval
+import Lib (runTest)
 
+import Control.Monad (void)
 import Data.Either
 import Data.Text
 import Data.Void
@@ -16,10 +17,45 @@ testParser parser input output =
 
 testParserFail :: (Show a, Eq a) => Parser a -> Text -> Expectation
 testParserFail parser input =
-  isLeft (parse parser "" input) `shouldBe` True
+  parse parser "" input `shouldSatisfy` isLeft
+
+testProgram :: Text -> Text -> Expectation
+testProgram programText expectedOutput = do
+  runTest programText `shouldReturn` expectedOutput
 
 main :: IO ()
 main = hspec $ do
+  describe "program output" $ do
+    it "constant" $ do
+      testProgram "main = 3;" "3"
+
+    it "negation" $ do
+      testProgram "main = negate 3;" "-3"
+
+    it "indirection" $ do
+      testProgram "main = negate (I 3);" "-3"
+
+    it "double negation" $ do
+      testProgram "main = twice negate 3;" "3"
+
+    it "explicit double negation" $ do
+      testProgram "main = negate (negate 3);" "3"
+
+    it "explicit double negation with $" $ do
+      testProgram "main = negate $ negate 3;" "3"
+
+    it "more complex program" $ do
+      testProgram "id x = x;\nf p = (id p) * p;\ndouble n = let b = 2 in n * b;\nmain = f (double 4);" "64"
+
+    it "regression test for recursive let and arithmetic ops" $ do
+      testProgram "three = 3;\nfour = ((1 + 6 - 2) * 4) / 5;\n\npair x y f = f x y;\nfst p = p K;\nsnd p = p K1;\nf x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)));main = f three four;" "4"
+
+    it "recursive functions like factorial" $ do
+      testProgram "fac n = if (n == 0) 1 (n * fac (n-1)); main = fac 3;" "6"
+
+    it "$" $ do
+      testProgram "main = I $ 3;" "3"
+
   describe "parsing" $ do
     it "parseNumber" $ do
       testParser parseExprNumber "42" (ExprNumber 42)
@@ -27,11 +63,16 @@ main = hspec $ do
     it "parseExprVariable" $ do
       testParser parseExprVariable "myVar" (ExprVariable "myVar")
       testParser parseExprVariable "var2" (ExprVariable "var2")
-      -- TODO -- testParserFail parseVariable "my_var"
-      --
+      testParser parseExprVariable "my_var" (ExprVariable "my_var")
+      testParserFail parseExprVariable "'var'"
+
     it "parseName" $ do
       testParser parseName "x" "x"
       testParser parseName "X" "X"
+      testParser parseName "letMeIn" "letMeIn"
+      testParser parseName "innocent" "innocent"
+      testParser parseName "ofCourse" "ofCourse"
+      testParser parseName "Packed" "Packed"
       testParserFail parseName "4eva"
       testParserFail parseName "let"
       testParserFail parseName "case"
@@ -39,26 +80,32 @@ main = hspec $ do
       testParserFail parseName "of"
       testParserFail parseName "Pack"
 
+    it "$" $ do
+      testParser parseProgram "main = negate $ negate 3;" [("main",[],ExprApplication (ExprApplication (ExprVariable "$") (ExprVariable "negate")) (ExprApplication (ExprVariable "negate") (ExprNumber 3)))]
+
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "Pack{0,1}" (ExprConstructor 0 1)
       testParser parseExprConstructor "Pack { 1 , 2 }" (ExprConstructor 1 2)
 
     it "parseDefinition" $ do
-      testParser parseDefinition "x = 2;" ("x", ExprNumber 2)
+      testParser parseDefinition "x = 2" ("x", ExprNumber 2)
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let x = 2; in x" (ExprLet [("x", ExprNumber 2)] (ExprVariable "x"))
-      testParser parseExprLet "let x = 2; y = 3; in x" (ExprLet [("x", ExprNumber 2), ("y", ExprNumber 3)] (ExprVariable "x"))
-      -- testParser parseExprLet "let x = 2; in let y = 3; in x" (ExprLet [("x", ExprNumber 2)] (ExprLet [("y", ExprNumber 3)] (ExprVariable "x")))
+      testParser parseExprLet "let x = 2 in x" (ExprLet [("x", ExprNumber 2)] (ExprVariable "x"))
+      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet [("x", ExprNumber 2), ("y", ExprNumber 3)] (ExprVariable "x"))
+      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet [("x", ExprNumber 2)] (ExprLet [("y", ExprNumber 3)] (ExprVariable "x")))
 
     it "parseExprCase" $ do
-      testParser parseExprCase "case x of <1> -> 2; <2> -> 1;" (ExprCase (ExprVariable "x") [(1, [], ExprNumber 2), (2, [], ExprNumber 1)])
+      testParser parseExprCase "case x of <1> -> 2, <2> -> 1" (ExprCase (ExprVariable "x") [(1, [], ExprNumber 2), (2, [], ExprNumber 1)])
 
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x. x" (ExprLambda ["x"] (ExprVariable "x"))
 
     it "parseSupercombinator" $ do
       testParser parseSupercombinator "id x = x;" ("id", ["x"], ExprVariable "x")
+
+    it "parses variables that begin with `case`" $ do
+      testParser parseSupercombinator "fst p = casePair p K;" ("fst", ["p"], ExprApplication (ExprApplication (ExprVariable "casePair") (ExprVariable "p")) (ExprVariable "K"))
 
     it "parseProgram" $ do
       testParser parseProgram "id x = x;\nmain = id 2;" [("id", ["x"], ExprVariable "x"), ("main", [], ExprApplication (ExprVariable "id") (ExprNumber 2))]
@@ -75,13 +122,4 @@ main = hspec $ do
     it "parses a program with many functions" $ do
       testParser parseProgram "id x = x;\nf p = (id p) * p;\ndouble n = n * 2;\nmain = f (double 4);"
         [("id",["x"],(ExprVariable "x")),("f",["p"],ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")),("double",["n"],ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprNumber 2)),("main",[],ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprNumber 4)))]
-
-    it "parses a program with many functions" $ do
-      let p = parse parseProgram "" "id x = x;\nf p = (id p) * p;\ndouble n = let b = 2; in n * b;\nmain = f (double 4);"
-      case p of
-        Left _ -> error "fail"
-        Right p1 -> do
-          let p2 = lambdaize p1
-          let p3 = flattenMain p2
-          p3 `shouldBe` (ExprNumber 7)
 

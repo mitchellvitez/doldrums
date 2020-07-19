@@ -1,29 +1,25 @@
 module Language where
 
 import Data.Text (Text, pack, intercalate)
--- import Data.Text.Lazy.Builder -- TODO
 
 -- | Expr is the data type of a Doldrums expression
-data Expr a                   -- ^ a is a binder, which is a name for a variable
+data Expr                     -- ^ a is a binder, which is a name for a variable
   = ExprVariable Name         -- ^ variables
   | ExprNumber Int            -- ^ numbers
   -- TODO: add floating point numbers, strings, etc.
   -- | ExprFloat Double
-  | ExprConstructor Int Int   -- ^ tag, arity -- TODO change tag to unique string
-  | ExprApplication (Expr a) (Expr a)
+  | ExprConstructor Int Int   -- ^ tag, arity
+  | ExprApplication (Expr Name) (Expr Name)
   | ExprLet                   -- ^ let expressions
-      [(a, Expr a)]           -- ^ list of definitions
-      (Expr a)                -- ^ body of the let expression
+      [(Name, Expr Name)]     -- ^ list of definitions
+      (Expr Name)             -- ^ body of the let expression
   | ExprCase                  -- ^ case expressions
-      (Expr a)                -- ^ the expression under scrutiny
-      [Alternative a]         -- ^ list of alternatives
+      (Expr Name)             -- ^ the expression under scrutiny
+      [Alternative Name]      -- ^ list of alternatives
   | ExprLambda                -- ^ lambda expressions
-      [a]                     -- ^ list of lambda abstractions
-      (Expr a)                -- ^ expression of the lambda
+      [Name]                  -- ^ list of lambda abstractions
+      (Expr Name)             -- ^ expression of the lambda
   deriving (Show, Eq)
-
--- TODO: see if we can just use Name throughout
-type CoreExpr = Expr Name
 
 type Name = Text
 

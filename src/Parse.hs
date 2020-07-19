@@ -35,11 +35,10 @@ parseSupercombinator = do
 
 parseExpr :: Parser CoreExpr
 parseExpr =
-  parseExprLet    <|>
-  parseExprCase   <|>
-  parseExprLambda <|>
-  parseExpr1
-  -- parseExpr0
+  try parseExprLet    <|>
+  try parseExprCase   <|>
+  try parseExprLambda <|>
+  parseExpr0
 
 assembleOp :: CoreExpr -> PartialExpr -> CoreExpr
 assembleOp expr NoOp = expr
@@ -51,14 +50,13 @@ parseEmpty = do
   string ""
   pure NoOp
 
--- TODO
--- parseExpr0 :: Parser CoreExpr
--- parseExpr0 = assembleOp <$> parseExpr1 <*> parseExpr0Partial
+parseExpr0 :: Parser CoreExpr
+parseExpr0 = assembleOp <$> parseExpr1 <*> parseExpr0Partial
 
--- parseExpr0Partial :: Parser PartialExpr
--- parseExpr0Partial =
---       parsePartialOp "$" parseExpr1
---   <|> parseEmpty
+parseExpr0Partial :: Parser PartialExpr
+parseExpr0Partial =
+      parsePartialOp "$" parseExpr1
+  <|> parseEmpty
 
 parseExpr1 :: Parser CoreExpr
 parseExpr1 = assembleOp <$> parseExpr2 <*> parseExpr1Partial

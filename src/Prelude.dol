@@ -1,6 +1,35 @@
 I x = x;
 K x y = x;
 K1 x y = y;
-S f g x = f x (g x);
-compose f g x = f (g x);
+S f g x = f x $ g x;
+compose f g x = f $ g x;
 twice f = compose f f;
+
+-- conditionals
+-- TODO add something that auto generates tags from `False = Pack{Bool,0}`
+-- and `True = Pack{Bool,0}`. Maybe just Bool 0 (reserve upper case names)
+-- data True 0 | False 0;
+False = Pack{1,0};
+True = Pack{2,0};
+not x = if x False True;
+and x y = if x y False;
+or x y = if x True y;
+xor x y = if x (not y) y;
+
+-- pairs
+-- data MkPair 2;
+MkPair = Pack{1,2};
+fst p = casePair p K;
+snd p = casePair p K1;
+
+-- lists
+-- data Nil 0 | LCons 2;
+LCons = Pack{2,2};
+Nil = Pack{1,0};
+head xs = caseList xs abort K;
+tail xs = caseList xs abort K1;
+length xs = caseList xs 0 length2;
+length2 x xs = 1 + length xs;
+printList xs = caseList xs stop printCons;
+-- TODO: print primitive
+printCons h t = print h (printList t);

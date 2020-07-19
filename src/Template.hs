@@ -31,14 +31,16 @@ type TiGlobals = Assoc Text Addr
 
 data TiStats = TiStats Int
 
-data Primitive = Neg | Add | Sub | Mul | Div | Eq | Neq | Gt | Lt | Geq | Leq | And | Or
-  deriving Show
+type Primitive = TiState -> TiState
+
+type Tag = Int
 
 data Node = NAp Addr Addr
           | NSupercomb Text [Text] CoreExpr
           | NNum Int
           | NInd Addr
           | NPrim Name Primitive
+          | NData Tag [Addr]
 
 assocLookup :: Eq a => a -> Assoc a b -> Text -> b
 assocLookup _ [] errMsg = error $ show errMsg
@@ -59,23 +61,6 @@ buildInitialHeap scDefs =
   where
     (heap1, scAddrs) = mapAccumL allocateSc hInitial scDefs
     (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
-
-primitives :: Assoc Name Primitive
-primitives =
-  [ ("negate", Neg)
-  , ("+", Add)
-  , ("-", Sub)
-  , ("*", Mul)
-  , ("/", Div)
-  , ("==", Eq)
-  , ("!=", Neq)
-  , (">", Gt)
-  , ("<", Lt)
-  , (">=", Geq)
-  , ("<=", Leq)
-  , ("&&", And)
-  , ("||", Or)
-  ]
 
 allocateSc :: TiHeap -> CoreSupercombinatorDefinition -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
@@ -98,13 +83,14 @@ doAdmin :: TiState -> TiState
 doAdmin state = applyToStats tiStatIncSteps state
 
 tiFinal :: TiState -> Bool
-tiFinal ([soleAddr], _, heap, _, _) = isDataNode (hLookup heap soleAddr)
+tiFinal ([soleAddr], [], heap, _, _) = isDataNode (hLookup heap soleAddr)
 tiFinal ([], _, _, _, _) = error "Empty stack"
 tiFinal _ = False
 
 isDataNode :: Node -> Bool
-isDataNode (NNum _) = True
-isDataNode _        = False
+isDataNode (NNum _)    = True
+isDataNode (NData t c) = True
+isDataNode _           = False
 
 step :: TiState -> TiState
 step state@(stack, _, heap, _, _) =
@@ -115,6 +101,7 @@ step state@(stack, _, heap, _, _) =
     dispatch (NSupercomb sc args body) = scStep state sc args body
     dispatch (NInd addr)               = indStep state addr
     dispatch (NPrim name prim)         = primStep state prim
+    dispatch (NData tag compts)        = dataStep state tag compts
 
 numStep :: TiState -> Int -> TiState
 numStep (stack, stack2:dump, heap, globals, stats) n =
@@ -139,29 +126,75 @@ scStep (stack, dump, heap, globals, stats) sc argNames body
     bindings = zip argNames (getArgs heap stack)
 
 indStep :: TiState -> Addr -> TiState
-indStep (a : stack, dump, heap, globals, stats) a' =
-  (a' : stack, dump, heap, globals, stats)
+indStep (a : stack, dump, heap, globals, stats) a2 =
+  (a2 : stack, dump, heap, globals, stats)
 
--- data Primitive = Neg | Add | Sub | Mul | Div | Eq | Neq | Gt | Lt | Geq | Leq | And | Or
+dataStep :: TiState -> Tag -> [Addr] -> TiState
+dataStep (stack, stack2:dump, heap, globals, stats) tag compts =
+  (stack2, dump, heap, globals, stats)
+
+primitives :: Assoc Name Primitive
+primitives =
+  [ ("negate", primMonadic negateNode)
+
+  , ("+", primArith (+))
+  , ("-", primArith (-))
+  , ("*", primArith (*))
+  , ("/", primArith (div))
+
+  , ("==", primComp (==))
+  , ("!=", primComp (/=))
+  , (">", primComp (>))
+  , ("<", primComp (<))
+  , (">=", primComp (>=))
+  , ("<=", primComp (<=))
+
+  , ("$", primApply)
+
+  , ("&&", primBool (&&))
+  , ("||", primBool (||))
+
+  , ("if", primIf)
+  , ("casePair", primCasePair)
+  , ("caseList", primCaseList)
+  , ("abort", error "encountered abort primitive")
+  ]
+  where negateNode (NNum x) = (NNum (negate x))
+
+-- TODO: separate primitives out into Primitives.hs
 primStep :: TiState -> Primitive -> TiState
-primStep state Neg = primUnary state negateNode
-  where negateNode (NNum x) = (NNum (-x))
-primStep state op = primBinary state $ case op of
-  Add -> \(NNum a) (NNum b) -> (NNum $ a + b)
-  Sub -> \(NNum a) (NNum b) -> (NNum $ a - b)
-  Mul -> \(NNum a) (NNum b) -> (NNum $ a * b)
-  Div -> \(NNum a) (NNum b) -> (NNum $ a `div` b)
-  Eq  -> \(NNum a) (NNum b) -> (NNum $ if a == b then 1 else 0) -- TODO: introduce real booleans
-  Neq -> \(NNum a) (NNum b) -> (NNum $ if a /= b then 1 else 0)
-  Gt  -> \(NNum a) (NNum b) -> (NNum $ if a > b then 1 else 0)
-  Lt  -> \(NNum a) (NNum b) -> (NNum $ if a < b then 1 else 0)
-  Geq -> \(NNum a) (NNum b) -> (NNum $ if a >= b then 1 else 0)
-  Leq -> \(NNum a) (NNum b) -> (NNum $ if a <= b then 1 else 0)
-  And -> \(NNum a) (NNum b) -> (NNum $ if a /= 0 && b /= 0 then 1 else 0)
-  Or -> \(NNum a) (NNum b) -> (NNum $ if a /= 0 || b /= 0 then 1 else 0)
+primStep state prim = prim state
 
-primUnary :: TiState -> (Node -> Node) -> TiState
-primUnary (stack, dump, heap, globals, stats) op
+primArith :: (Int -> Int -> Int) -> TiState -> TiState
+primArith op state = primDyadic op' state
+  where op' (NNum n) (NNum m) = NNum (op n m)
+        op' _ _ = error "bad type passed to arithmetic operator"
+
+doldrumsTrue = NData 2 []
+doldrumsFalse = NData 1 []
+
+toDoldrumsBool :: Bool -> Node
+toDoldrumsBool x = if x then doldrumsTrue else doldrumsFalse
+
+fromDoldrumsBool :: Node -> Bool
+fromDoldrumsBool x = case x of
+  NData 2 [] -> True
+  NData 1 [] -> False
+  _ -> error "tried to evaluate a non-bool as a bool"
+
+primComp :: (Int -> Int -> Bool) -> TiState -> TiState
+primComp op state = primDyadic op' state
+  where op' (NNum n) (NNum m) = toDoldrumsBool $ op n m
+        op' _ _ = error "bad type passed to arithmetic operator"
+
+primBool :: (Bool -> Bool -> Bool) -> TiState -> TiState
+primBool op state = primDyadic op' state
+  where op' a@(NData _ []) b@(NData _ []) =
+          toDoldrumsBool $ op (fromDoldrumsBool a) (fromDoldrumsBool b)
+        op' _ _ = error "bad type passed to arithmetic operator"
+
+primMonadic :: (Node -> Node) -> TiState -> TiState
+primMonadic op (stack, dump, heap, globals, stats)
   | length args /= 1 = error $ "wrong number of args for unary operator"
   | not (isDataNode argNode) = ([argAddr], newStack:dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
@@ -173,9 +206,9 @@ primUnary (stack, dump, heap, globals, stats) op
     rootOfRedex = head newStack
     newHeap = hUpdate heap rootOfRedex $ op argNode
 
-primBinary :: TiState -> (Node -> Node -> Node) -> TiState
-primBinary (stack, dump, heap, globals, stats) op
-  | length args /= 2 = error $ "wrong number of args for binary operator"
+primDyadic :: (Node -> Node -> Node) -> TiState -> TiState
+primDyadic op (stack, dump, heap, globals, stats)
+  | length args /= 2 = error $ "wrong number of args for dyadic operator"
   | not (isDataNode arg1Node) = ([arg1addr], newStack:dump, heap, globals, stats)
   | not (isDataNode arg2Node) = ([arg2addr], newStack:dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
@@ -187,6 +220,80 @@ primBinary (stack, dump, heap, globals, stats) op
     newStack = drop 2 stack
     rootOfRedex = head newStack
     newHeap = hUpdate heap rootOfRedex $ op arg1Node arg2Node
+
+primApply :: TiState -> TiState
+primApply (stack, dump, heap, globals, stats)
+  | length args /= 2 = error $ "wrong number of args for $"
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+  where
+    args = getArgs heap stack
+    (arg1addr:arg2addr:restArgs) = args
+    arg1node = hLookup heap arg1addr
+    arg2node = hLookup heap arg2addr
+    newStack = drop 2 stack
+    rootOfRedex = head newStack
+    newHeap = hUpdate heap rootOfRedex $ NAp arg1addr arg2addr
+
+primIf :: TiState -> TiState
+primIf (stack, dump, heap, globals, stats)
+  | length args /= 3 = error "wrong number of args for if"
+  | not (isDataNode arg1node) = ([arg1addr], newStack:dump, heap, globals, stats)
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+  where
+    args = getArgs heap stack
+    (arg1addr:arg2addr:arg3addr:restArgs) = args
+    arg1node = hLookup heap arg1addr
+    newStack = drop 3 stack
+    rootOfRedex = head newStack
+    NData tag [] = arg1node
+    resultAddr
+      | tag == 2 = arg2addr
+      | otherwise = arg3addr
+    newHeap = hUpdate heap rootOfRedex $ NInd resultAddr
+
+primCasePair :: TiState -> TiState
+primCasePair (stack, dump, heap, globals, stats)
+  | length args /= 2 = error "wrong number of arguments to casePair"
+  | not (isDataNode arg1node) = ([arg1addr], newStack:dump, heap, globals, stats)
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+  where
+    args = getArgs heap stack
+    (arg1addr:arg2addr:restArgs) = args
+    arg1node = hLookup heap arg1addr
+    newStack = drop 2 stack
+    rootOfRedex = head newStack
+    NData tag [fst,snd] = arg1node
+    newHeap = hUpdate heap1 rootOfRedex (NAp tempAddr snd)
+      where (heap1, tempAddr) = hAlloc heap (NAp arg2addr fst)
+
+-- TODO: generalize this somehow to allow `caseX` as a primitive
+primCaseList :: TiState -> TiState
+primCaseList (stack, dump, heap, globals, stats)
+  | length args /= 3 = error "wrong number of arguments to caseList"
+  | not (isDataNode arg1node) = ([arg1addr], newStack:dump, heap, globals, stats)
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+  where
+    args = getArgs heap stack
+    (arg1addr:arg2addr:arg3addr:restArgs) = args
+    arg1node = hLookup heap arg1addr
+    newStack = drop 3 stack
+    rootOfRedex = Prelude.head newStack
+    NData tag compts = arg1node
+    [head,tail] = compts
+    newHeap
+      | tag == 1 = hUpdate heap rootOfRedex (NInd arg2addr)
+      | otherwise = hUpdate heap1 rootOfRedex (NAp tempAddr tail)
+        where (heap1, tempAddr) = hAlloc heap (NAp arg3addr head)
+
+primConstr :: Tag -> Int -> TiState -> TiState
+primConstr tag arity (stack, dump, heap, globals, stats)
+  | length args < arity = error "wrong number of args to constructor"
+  | otherwise = (newStack, dump, newHeap, globals, stats)
+    where
+      args = getArgs heap stack
+      newStack = drop arity stack
+      rootOfRedex = head newStack
+      newHeap = hUpdate heap rootOfRedex (NData tag args)
 
 getArgs :: TiHeap -> TiStack -> [Addr]
 getArgs heap (_ : stack) = map getArg stack
@@ -234,11 +341,11 @@ instantiateAndUpdate (ExprLet defs body) updateAddr heap oldEnv =
       where
         (heap1, addr) = instantiate rhs heap newEnv
 instantiateAndUpdate (ExprConstructor tag arity) updateAddr heap env =
-  error "can't instantiateAndUpdate constructors yet"
+  hUpdate heap updateAddr . NPrim "Cons" $ primConstr tag arity
 
-instantiateConstr :: p1 -> p2 -> p3 -> p4 -> a
--- instantiateConstr tag arity heap env = undefined
-instantiateConstr _ _ _ _ = error "Can't instantiate construtors yet"
+instantiateConstr :: Tag -> Int -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
+instantiateConstr tag arity heap env =
+  hAlloc heap . NPrim "Cons" $ primConstr tag arity
 
 -- | Show results
 showResults :: [TiState] -> Text
@@ -286,6 +393,7 @@ showNode (NSupercomb name _ _) = "NSupercomb " <> name
 showNode (NNum n) = "NNum " <> tshow n
 showNode (NInd addr) = "NInd " <> tshow addr
 showNode (NPrim name prim) = "NPrim " <> name
+showNode (NData tag compts) = "NData " <> tshow tag <> " [" <> Text.intercalate "," (map showAddr compts) <> "]"
 
 showFinalNode :: Node -> Text
 showFinalNode (NAp a1 a2) = Text.concat ["<application:", showAddr a1, ",", showAddr a2, ">"]
@@ -293,6 +401,7 @@ showFinalNode (NSupercomb name _ _) = "<combinator:" <> name <> ">"
 showFinalNode (NInd addr) = "<indirection:" <> tshow addr <> ">"
 showFinalNode (NNum n) = tshow n
 showFinalNode (NPrim name prim) = "<primitive:(" <> name <> ")>"
+showFinalNode node@(NData tag compts) = "<data:{" <> tshow tag <> "," <> Text.intercalate "\n" (map tshow compts) <> "}>"
 
 showAddr :: Addr -> Text
 showAddr addr = tshow addr
