@@ -55,7 +55,7 @@ parseExpr0 = assembleOp <$> parseExpr1 <*> parseExpr0Partial
 
 parseExpr0Partial :: Parser PartialExpr
 parseExpr0Partial =
-      parsePartialOp "$" parseExpr1
+      parsePartialOp "$" parseExpr0
   <|> parseEmpty
 
 parseExpr1 :: Parser Expr
@@ -63,7 +63,7 @@ parseExpr1 = assembleOp <$> parseExpr2 <*> parseExpr1Partial
 
 parseExpr1Partial :: Parser PartialExpr
 parseExpr1Partial =
-      parsePartialOp "||" parseExpr2
+      parsePartialOp "||" parseExpr1
   <|> parseEmpty
 
 parseExpr2 :: Parser Expr
@@ -71,7 +71,7 @@ parseExpr2 = assembleOp <$> parseExpr3 <*> parseExpr2Partial
 
 parseExpr2Partial :: Parser PartialExpr
 parseExpr2Partial =
-      parsePartialOp "&&" parseExpr3
+      parsePartialOp "&&" parseExpr2
   <|> parseEmpty
 
 parseExpr3 :: Parser Expr
@@ -79,12 +79,12 @@ parseExpr3 = assembleOp <$> parseExpr4 <*> parseExpr3Partial
 
 parseExpr3Partial :: Parser PartialExpr
 parseExpr3Partial =
-      parsePartialOp ">=" parseExpr4
-  <|> parsePartialOp "<=" parseExpr4
-  <|> parsePartialOp "==" parseExpr4
-  <|> parsePartialOp "!=" parseExpr4
-  <|> parsePartialOp ">"  parseExpr4
-  <|> parsePartialOp "<"  parseExpr4
+      parsePartialOp ">=" parseExpr3
+  <|> parsePartialOp "<=" parseExpr3
+  <|> parsePartialOp "==" parseExpr3
+  <|> parsePartialOp "!=" parseExpr3
+  <|> parsePartialOp ">"  parseExpr3
+  <|> parsePartialOp "<"  parseExpr3
   <|> parseEmpty
 
 parseExpr4 :: Parser Expr
@@ -93,7 +93,7 @@ parseExpr4 = assembleOp <$> parseExpr5 <*> parseExpr4Partial
 parseExpr4Partial :: Parser PartialExpr
 parseExpr4Partial =
       parsePartialOp "+" parseExpr4
-  <|> parsePartialOp "-" parseExpr5
+  <|> parsePartialOp "-" parseExpr4
   <|> parseEmpty
 
 parseExpr5 :: Parser Expr
@@ -102,7 +102,7 @@ parseExpr5 = assembleOp <$> parseExpr6 <*> parseExpr5Partial
 parseExpr5Partial :: Parser PartialExpr
 parseExpr5Partial =
       parsePartialOp "*" parseExpr5
-  <|> parsePartialOp "/" parseExpr6
+  <|> parsePartialOp "/" parseExpr5
   <|> parseEmpty
 
 parseExpr6 :: Parser Expr

@@ -223,7 +223,7 @@ primDyadic op (stack, dump, heap, globals, stats)
 
 primApply :: TiState -> TiState
 primApply (stack, dump, heap, globals, stats)
-  | length args /= 2 = error $ "wrong number of args for $"
+  | length args < 2 = error $ "wrong number of args for $"
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
     args = getArgs heap stack
@@ -236,7 +236,7 @@ primApply (stack, dump, heap, globals, stats)
 
 primIf :: TiState -> TiState
 primIf (stack, dump, heap, globals, stats)
-  | length args /= 3 = error "wrong number of args for if"
+  | length args < 3 = error "wrong number of args for if"
   | not (isDataNode arg1node) = ([arg1addr], newStack:dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
@@ -253,7 +253,7 @@ primIf (stack, dump, heap, globals, stats)
 
 primCasePair :: TiState -> TiState
 primCasePair (stack, dump, heap, globals, stats)
-  | length args /= 2 = error "wrong number of arguments to casePair"
+  | length args < 2 = error "wrong number of arguments to casePair"
   | not (isDataNode arg1node) = ([arg1addr], newStack:dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
@@ -269,7 +269,7 @@ primCasePair (stack, dump, heap, globals, stats)
 -- TODO: generalize this somehow to allow `caseX` as a primitive
 primCaseList :: TiState -> TiState
 primCaseList (stack, dump, heap, globals, stats)
-  | length args /= 3 = error "wrong number of arguments to caseList"
+  | length args < 3 = error "wrong number of arguments to caseList"
   | not (isDataNode arg1node) = ([arg1addr], newStack:dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
