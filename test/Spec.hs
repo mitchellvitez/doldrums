@@ -54,7 +54,7 @@ main = hspec $ do
       testProgram "fac n = if (n == 0) 1 (n * fac (n-1)); main = fac 3;" "6"
 
     it "$" $ do
-      testProgram "main = I $ 3;" "3"
+      testProgram "main = square $ addOne $ double 3; square x = x*x; addOne x = x + 1; double x = x + x;" "14"
 
   describe "parsing" $ do
     it "parseNumber" $ do

@@ -36,7 +36,7 @@ type Primitive = TiState -> TiState
 type Tag = Int
 
 data Node = NAp Addr Addr
-          | NSupercomb Text [Text] CoreExpr
+          | NSupercomb Text [Text] Expr
           | NNum Int
           | NInd Addr
           | NPrim Name Primitive
@@ -47,7 +47,7 @@ assocLookup _ [] errMsg = error $ show errMsg
 assocLookup a ((x, y):xs) errMsg =
   if a == x then y else assocLookup a xs errMsg
 
-compile :: CoreProgram -> CoreProgram -> TiState
+compile :: Program -> Program -> TiState
 compile prelude program = (initialStack, initialTiDump, initialHeap, globals, tiStatInitial)
   where
     initialStack = [addressOfMain]
@@ -55,14 +55,14 @@ compile prelude program = (initialStack, initialTiDump, initialHeap, globals, ti
     addressOfMain = assocLookup "main" globals "main is not defined"
     scDefs = program ++ prelude
 
-buildInitialHeap :: [CoreSupercombinatorDefinition] -> (TiHeap, TiGlobals)
+buildInitialHeap :: [SupercombinatorDefinition] -> (TiHeap, TiGlobals)
 buildInitialHeap scDefs =
   (heap2, scAddrs ++ primAddrs)
   where
     (heap1, scAddrs) = mapAccumL allocateSc hInitial scDefs
     (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
 
-allocateSc :: TiHeap -> CoreSupercombinatorDefinition -> (TiHeap, (Name, Addr))
+allocateSc :: TiHeap -> SupercombinatorDefinition -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (heap', (name, addr))
   where
     (heap', addr) = hAlloc heap (NSupercomb name args body)
@@ -116,7 +116,7 @@ apStep (stack, dump, heap, globals, stats) a1 a2 =
             apNode = head stack
     apDispatch node = (a1 : stack, dump, heap, globals, stats)
 
-scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
+scStep :: TiState -> Name -> [Name] -> Expr -> TiState
 scStep (stack, dump, heap, globals, stats) sc argNames body
      = (newStack, dump, newHeap, globals, stats)
   where
@@ -301,7 +301,7 @@ getArgs heap (_ : stack) = map getArg stack
     getArg addr = arg where (NAp _ arg) = hLookup heap addr
 getArgs _ [] = []
 
-instantiate :: CoreExpr -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
+instantiate :: Expr -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
 instantiate (ExprNumber n) heap _ = hAlloc heap (NNum n)
 instantiate (ExprApplication e1 e2) heap env = hAlloc heap2 (NAp a1 a2)
   where
@@ -319,7 +319,7 @@ instantiate (ExprLet defs body) heap oldEnv =
 instantiate (ExprCase _ _) _ _ = error "Can't instantiate case exprs"
 instantiate (ExprLambda _ _ ) _ _ = error "Can't instantiate lambda exprs"
 
-instantiateAndUpdate :: CoreExpr -> Addr -> TiHeap -> Assoc Text Addr -> TiHeap
+instantiateAndUpdate :: Expr -> Addr -> TiHeap -> Assoc Text Addr -> TiHeap
 instantiateAndUpdate (ExprNumber n) updateAddr heap env =
   hUpdate heap updateAddr (NNum n)
 instantiateAndUpdate (ExprApplication a b) updateAddr heap env =
