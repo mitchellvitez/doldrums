@@ -50,7 +50,5 @@ default-extensions:
   - OverloadedStrings
   - LambdaCase
   - GADTs
-  - StandaloneDeriving
   - TypeOperators
   - KindSignatures
-  - TypeApplications

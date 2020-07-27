@@ -1,12 +1,15 @@
 module Typecheck where
 
 import Language
+
+import Data.Constraint
+import Data.Kind hiding (Type)
 import Data.Text (Text)
 
 data TypedExpr ty where
   TypedExprVariable :: Name -> TypedExpr ty
   TypedExprLiteral :: ty -> TypedExpr ty
-  TypedExprLet :: [(Name, TypedExpr ty1)] -> TypedExpr ty
+  TypedExprLet :: [(Name, TypedExpr ty1)] -> TypedExpr t2 -> TypedExpr ty
   TypedExprBinOp :: TypedBinOp tyIn tyOut -> TypedExpr tyIn -> TypedExpr tyIn -> TypedExpr tyOut
   TypedExprUnOp :: TypedUnOp tyIn tyOut -> TypedExpr tyIn -> TypedExpr tyOut
   TypedExprConstructor :: Int -> Int -> TypedExpr ty
@@ -37,10 +40,10 @@ data BinOp
   | Sub -- -
   | Mul -- *
   | Div -- div
-  | AddFloat -- +
-  | SubFloat -- -
-  | MulFloat -- *
-  | DivFloat -- /
+  | AddFloat -- +.
+  | SubFloat -- -.
+  | MulFloat -- *.
+  | DivFloat -- /.
   deriving (Show, Eq)
 
 data TypedOp inTy outTy
@@ -78,4 +81,17 @@ data Type ty where
 
 data (f :*: g) x = f x :*: g x
 
-type TypedExpression x = TypedExpr :*: Type
+-- type TypedExpression x = TypedExpr x :*: Type x
+
+data A (f :: * -> *) = forall x. A (f x)
+
+-- typecheck :: Expr -> A TypedExpression
+typecheck expr = case expr of
+  ExprLiteral (ValueInt n)  -> TypedExprLiteral n
+  ExprVariable name         -> TypedExprVariable name
+  ExprConstructor tag arity -> TypedExprConstructor tag arity
+  -- ExprLet bindings body     -> TypedExprLet bindings body
+  -- ExprLambda vars body      -> TypedExprLambda vars body
+  -- ExprApplication e1 e2     -> TypedExprApplication e1 e2
+  -- TypedExprBinOp, TypedExprUnOp
+  -- TODO
