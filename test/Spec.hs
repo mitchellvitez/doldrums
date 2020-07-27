@@ -53,12 +53,12 @@ main = hspec $ do
     it "recursive functions like factorial" $ do
       testProgram "fac n = if (n == 0) 1 (n * fac (n-1)); main = fac 3;" "6"
 
-    it "$" $ do
-      testProgram "main = square $ addOne $ double 3; square x = x*x; addOne x = x + 1; double x = x + x;" "14"
+    it "ap $" $ do
+      testProgram "main = square $ addOne $ double 3; square x = x*x; addOne x = x + 1; double x = x + x;" "49"
 
   describe "parsing" $ do
     it "parseNumber" $ do
-      testParser parseExprNumber "42" (ExprNumber 42)
+      testParser parseExprLiteral "42" (ExprLiteral (ValueInt 42))
 
     it "parseExprVariable" $ do
       testParser parseExprVariable "myVar" (ExprVariable "myVar")
@@ -75,28 +75,24 @@ main = hspec $ do
       testParser parseName "Packed" "Packed"
       testParserFail parseName "4eva"
       testParserFail parseName "let"
-      testParserFail parseName "case"
       testParserFail parseName "in"
       testParserFail parseName "of"
       testParserFail parseName "Pack"
 
     it "$" $ do
-      testParser parseProgram "main = negate $ negate 3;" [("main",[],ExprApplication (ExprApplication (ExprVariable "$") (ExprVariable "negate")) (ExprApplication (ExprVariable "negate") (ExprNumber 3)))]
+      testParser parseProgram "main = negate $ negate 3;" [("main",[],ExprApplication (ExprApplication (ExprVariable "$") (ExprVariable "negate")) (ExprApplication (ExprVariable "negate") (ExprLiteral (ValueInt 3))))]
 
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "Pack{0,1}" (ExprConstructor 0 1)
       testParser parseExprConstructor "Pack { 1 , 2 }" (ExprConstructor 1 2)
 
     it "parseDefinition" $ do
-      testParser parseDefinition "x = 2" ("x", ExprNumber 2)
+      testParser parseDefinition "x = 2" ("x", ExprLiteral (ValueInt 2))
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let x = 2 in x" (ExprLet [("x", ExprNumber 2)] (ExprVariable "x"))
-      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet [("x", ExprNumber 2), ("y", ExprNumber 3)] (ExprVariable "x"))
-      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet [("x", ExprNumber 2)] (ExprLet [("y", ExprNumber 3)] (ExprVariable "x")))
-
-    it "parseExprCase" $ do
-      testParser parseExprCase "case x of <1> -> 2, <2> -> 1" (ExprCase (ExprVariable "x") [(1, [], ExprNumber 2), (2, [], ExprNumber 1)])
+      testParser parseExprLet "let x = 2 in x" (ExprLet [("x", ExprLiteral (ValueInt 2))] (ExprVariable "x"))
+      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet [("x", ExprLiteral (ValueInt 2)), ("y", ExprLiteral (ValueInt 3))] (ExprVariable "x"))
+      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet [("x", ExprLiteral (ValueInt 2))] (ExprLet [("y", ExprLiteral (ValueInt 3))] (ExprVariable "x")))
 
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x. x" (ExprLambda ["x"] (ExprVariable "x"))
@@ -104,22 +100,18 @@ main = hspec $ do
     it "parseSupercombinator" $ do
       testParser parseSupercombinator "id x = x;" ("id", ["x"], ExprVariable "x")
 
-    it "parses variables that begin with `case`" $ do
-      testParser parseSupercombinator "fst p = casePair p K;" ("fst", ["p"], ExprApplication (ExprApplication (ExprVariable "casePair") (ExprVariable "p")) (ExprVariable "K"))
-
     it "parseProgram" $ do
-      testParser parseProgram "id x = x;\nmain = id 2;" [("id", ["x"], ExprVariable "x"), ("main", [], ExprApplication (ExprVariable "id") (ExprNumber 2))]
+      testParser parseProgram "id x = x;\nmain = id 2;" [("id", ["x"], ExprVariable "x"), ("main", [], ExprApplication (ExprVariable "id") (ExprLiteral (ValueInt 2)))]
 
     it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
 
     it "parses a simple doubling program" $ do
       testParser parseProgram "main = double 21;\ndouble x = x + x;"
-        [ ("main", [], (ExprApplication (ExprVariable "double") (ExprNumber 21)))
+        [ ("main", [], (ExprApplication (ExprVariable "double") (ExprLiteral (ValueInt 21))))
         , ("double", ["x"], (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x")))
         ]
 
     it "parses a program with many functions" $ do
       testParser parseProgram "id x = x;\nf p = (id p) * p;\ndouble n = n * 2;\nmain = f (double 4);"
-        [("id",["x"],(ExprVariable "x")),("f",["p"],ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")),("double",["n"],ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprNumber 2)),("main",[],ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprNumber 4)))]
-
+        [("id",["x"],(ExprVariable "x")),("f",["p"],ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")),("double",["n"],ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (ValueInt 2))),("main",[],ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (ValueInt 4))))]

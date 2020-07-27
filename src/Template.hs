@@ -35,12 +35,13 @@ type Primitive = TiState -> TiState
 
 type Tag = Int
 
-data Node = NAp Addr Addr
-          | NSupercomb Text [Text] Expr
-          | NNum Int
-          | NInd Addr
-          | NPrim Name Primitive
-          | NData Tag [Addr]
+data Node
+  = NAp Addr Addr
+  | NSupercomb Text [Text] Expr
+  | NLit Value
+  | NInd Addr
+  | NPrim Name Primitive
+  | NData Tag [Addr]
 
 assocLookup :: Eq a => a -> Assoc a b -> Text -> b
 assocLookup _ [] errMsg = error $ show errMsg
@@ -88,7 +89,7 @@ tiFinal ([], _, _, _, _) = error "Empty stack"
 tiFinal _ = False
 
 isDataNode :: Node -> Bool
-isDataNode (NNum _)    = True
+isDataNode (NLit _)    = True
 isDataNode (NData t c) = True
 isDataNode _           = False
 
@@ -96,15 +97,15 @@ step :: TiState -> TiState
 step state@(stack, _, heap, _, _) =
   dispatch (hLookup heap (head stack))
   where
-    dispatch (NNum n )                 = numStep state n
+    dispatch (NLit n)                 = literalStep state n
     dispatch (NAp a1 a2)               = apStep state a1 a2
     dispatch (NSupercomb sc args body) = scStep state sc args body
     dispatch (NInd addr)               = indStep state addr
     dispatch (NPrim name prim)         = primStep state prim
     dispatch (NData tag compts)        = dataStep state tag compts
 
-numStep :: TiState -> Int -> TiState
-numStep (stack, stack2:dump, heap, globals, stats) n =
+literalStep :: TiState -> Value -> TiState
+literalStep (stack, stack2:dump, heap, globals, stats) n =
   (stack2, dump, heap, globals, stats)
 
 apStep :: TiState -> Addr -> Addr -> TiState
@@ -133,14 +134,176 @@ dataStep :: TiState -> Tag -> [Addr] -> TiState
 dataStep (stack, stack2:dump, heap, globals, stats) tag compts =
   (stack2, dump, heap, globals, stats)
 
+primStep :: TiState -> Primitive -> TiState
+primStep state prim = prim state
+
+getArgs :: TiHeap -> TiStack -> [Addr]
+getArgs heap (_ : stack) = map getArg stack
+  where
+    getArg addr = arg where (NAp _ arg) = hLookup heap addr
+getArgs _ [] = []
+
+instantiate :: Expr -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
+instantiate (ExprLiteral v) heap _ = hAlloc heap (NLit v)
+instantiate (ExprApplication e1 e2) heap env = hAlloc heap2 (NAp a1 a2)
+  where
+    (heap1, a1) = instantiate e1 heap  env
+    (heap2, a2) = instantiate e2 heap1 env
+instantiate (ExprVariable v) heap env = (heap, assocLookup v env ("Undefined name " <> v))
+instantiate (ExprConstructor tag arity) heap env = instantiateConstr tag arity heap env
+instantiate (ExprLet defs body) heap oldEnv =
+  instantiate body heap1 newEnv
+  where
+    (heap1, extraBindings) = mapAccumL instantiateRhs heap defs
+    newEnv = oldEnv ++ extraBindings
+    instantiateRhs heap3 (name, rhs) = (heap2, (name, addr))
+      where (heap2, addr) = instantiate rhs heap3 newEnv
+instantiate (ExprLambda _ _ ) _ _ = error "Can't instantiate lambda exprs"
+
+instantiateAndUpdate :: Expr -> Addr -> TiHeap -> Assoc Text Addr -> TiHeap
+instantiateAndUpdate (ExprLiteral v) updateAddr heap env =
+  hUpdate heap updateAddr (NLit v)
+instantiateAndUpdate (ExprApplication a b) updateAddr heap env =
+  hUpdate heap2 updateAddr (NAp x y)
+  where
+    (heap1, x) = instantiate a heap env
+    (heap2, y) = instantiate b heap1 env
+instantiateAndUpdate (ExprVariable v) updateAddr heap env =
+  hUpdate heap updateAddr (NInd varAddr)
+  where
+    varAddr = assocLookup v env ("Undefined name " <> v)
+instantiateAndUpdate (ExprLet defs body) updateAddr heap oldEnv =
+  instantiateAndUpdate body updateAddr heap1 newEnv
+  where
+    (heap1, extraBindings) = mapAccumL instantiateRhs heap defs
+    newEnv = extraBindings ++ oldEnv
+    instantiateRhs heap (name, rhs) =
+      (heap1, (name, addr))
+      where
+        (heap1, addr) = instantiate rhs heap newEnv
+instantiateAndUpdate (ExprConstructor tag arity) updateAddr heap env =
+  hUpdate heap updateAddr . NPrim "Cons" $ primConstr tag arity
+
+instantiateConstr :: Tag -> Int -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
+instantiateConstr tag arity heap env =
+  hAlloc heap . NPrim "Cons" $ primConstr tag arity
+
+-- | Show results
+showResults :: [TiState] -> Text
+showResults states = Text.concat $ Prelude.map showState states <> [showStats (last states)]
+
+showFinalResults :: [TiState] -> Text
+showFinalResults states = showFinalState $ last states
+
+showFinalState :: TiState -> Text
+showFinalState (stack, _, heap, _, _) = showFinalStack heap stack
+
+showFinalStack :: TiHeap -> TiStack -> Text
+showFinalStack heap stack = Text.intercalate "\n" (map showFinalStackItem stack)
+  where showFinalStackItem addr = showFinalNode $ hLookup heap addr
+
+showState :: TiState -> Text
+showState (stack, dump, heap, _, _) = Text.concat [showStack heap stack, "\n", showDump dump, "\n"]
+
+showStack :: TiHeap -> TiStack -> Text
+showStack heap stack = Text.concat [
+    "Stk [",
+    Text.intercalate "\n" (map showStackItem stack),
+    " ]"
+    ]
+  where
+    showStackItem addr = Text.concat [ showFWAddr addr, ": ",
+                                   showStkNode heap (hLookup heap addr)]
+
+showDump :: TiDump -> Text
+showDump dump = "Dump depth " <> tshow (length dump)
+
+showStkNode :: TiHeap -> Node -> Text
+showStkNode heap (NAp funAddr argAddr) =
+    Text.concat ["NAp ", showFWAddr funAddr, showDetail funAddr,
+             " ", showFWAddr argAddr, showDetail argAddr]
+  where
+    showDetail addr = Text.concat [" (", showNode (hLookup heap addr), ")"]
+showStkNode _ node = showNode node
+
+tshow :: Show a => a -> Text
+tshow = pack . show
+
+showNode :: Node -> Text
+showNode (NAp a1 a2) = Text.concat ["NAp ", showAddr a1, " ", showAddr a2]
+showNode (NSupercomb name _ _) = "NSupercomb " <> name
+showNode (NLit n) = "NLit " <> tshow n
+showNode (NInd addr) = "NInd " <> tshow addr
+showNode (NPrim name prim) = "NPrim " <> name
+showNode (NData tag compts) = "NData " <> tshow tag <> " [" <> Text.intercalate "," (map showAddr compts) <> "]"
+
+showFinalNode :: Node -> Text
+showFinalNode (NAp a1 a2) = Text.concat ["<application:", showAddr a1, ",", showAddr a2, ">"]
+showFinalNode (NSupercomb name _ _) = "<combinator:" <> name <> ">"
+showFinalNode (NInd addr) = "<indirection:" <> tshow addr <> ">"
+showFinalNode (NLit n) = case n of
+  ValueInt x -> tshow x
+  ValueDouble x -> tshow x
+  ValueBool x -> tshow x
+  ValueString x -> tshow x
+showFinalNode (NPrim name prim) = "<primitive:(" <> name <> ")>"
+showFinalNode node@(NData tag compts) = "<data:{" <> tshow tag <> "," <> Text.intercalate "\n" (map tshow compts) <> "}>"
+
+showAddr :: Addr -> Text
+showAddr addr = tshow addr
+
+showFWAddr :: Addr -> Text
+showFWAddr addr = genSpaces (4 - Text.length str) <> str
+  where
+    str = tshow addr
+    genSpaces n = pack $ replicate n ' '
+
+showStats :: TiState -> Text
+showStats (_, _, heap, _, stats) =
+    Text.concat ["Total number of steps = ",
+             tshow (tiStatGetSteps stats),
+             "\n\n",
+             showHeap heap]
+
+showHeap :: TiHeap -> Text
+showHeap heap = Text.concat ["Heap:",
+    (Text.concat $ map showHeapAddr addrs)]
+  where
+    addrs = sort $ hAddresses heap
+    showHeapAddr addr = Text.concat ["\n", tshow addr, " ", showNode (hLookup heap addr)]
+
+tiStatInitial :: TiStats
+tiStatInitial = TiStats 0
+
+tiStatIncSteps :: TiStats -> TiStats
+tiStatIncSteps (TiStats n) = TiStats $ n + 1
+
+tiStatGetSteps :: TiStats -> Int
+tiStatGetSteps (TiStats n) = n
+
+applyToStats :: (TiStats -> TiStats) -> TiState -> TiState
+applyToStats statsFun (stack, dump, heap, scDefs, stats) =
+  (stack, dump, heap, scDefs, statsFun stats)
+
+-----------------------------------------------------------
+-- PRIMITIVES ---------------------------------------------
+-----------------------------------------------------------
+
 primitives :: Assoc Name Primitive
 primitives =
   [ ("negate", primMonadic negateNode)
+  , ("~", primMonadic negateNode)
+  , ("!", primMonadic notNode)
 
   , ("+", primArith (+))
   , ("-", primArith (-))
   , ("*", primArith (*))
   , ("/", primArith (div))
+
+  , ("+.", primArithFloat (+))
+  , ("-.", primArithFloat (-))
+  , ("*.", primArithFloat (*))
+  , ("/.", primArithFloat (/))
 
   , ("==", primComp (==))
   , ("!=", primComp (/=))
@@ -159,15 +322,20 @@ primitives =
   , ("caseList", primCaseList)
   , ("abort", error "encountered abort primitive")
   ]
-  where negateNode (NNum x) = (NNum (negate x))
+  where negateNode (NLit (ValueInt x)) = NLit (ValueInt (negate x))
+        negateNode (NLit (ValueDouble x)) = NLit (ValueDouble (negate x))
+        negateNode _ = error "bad value for negateNode"
+        notNode (NLit (ValueBool x)) = NLit (ValueBool (not x))
+        notNode _ = error "bad value for notNode"
 
--- TODO: separate primitives out into Primitives.hs
-primStep :: TiState -> Primitive -> TiState
-primStep state prim = prim state
-
-primArith :: (Int -> Int -> Int) -> TiState -> TiState
+primArith :: (Integer -> Integer -> Integer) -> TiState -> TiState
 primArith op state = primDyadic op' state
-  where op' (NNum n) (NNum m) = NNum (op n m)
+  where op' (NLit (ValueInt n)) (NLit (ValueInt m)) = NLit (ValueInt (op n m))
+        op' _ _ = error "bad type passed to arithmetic operator"
+
+primArithFloat :: (Double -> Double -> Double) -> TiState -> TiState
+primArithFloat op state = primDyadic op' state
+  where op' (NLit (ValueDouble n)) (NLit (ValueDouble m)) = NLit (ValueDouble (op n m))
         op' _ _ = error "bad type passed to arithmetic operator"
 
 doldrumsTrue = NData 2 []
@@ -182,9 +350,9 @@ fromDoldrumsBool x = case x of
   NData 1 [] -> False
   _ -> error "tried to evaluate a non-bool as a bool"
 
-primComp :: (Int -> Int -> Bool) -> TiState -> TiState
+primComp :: (Value -> Value -> Bool) -> TiState -> TiState
 primComp op state = primDyadic op' state
-  where op' (NNum n) (NNum m) = toDoldrumsBool $ op n m
+  where op' (NLit n) (NLit m) = toDoldrumsBool $ op n m
         op' _ _ = error "bad type passed to arithmetic operator"
 
 primBool :: (Bool -> Bool -> Bool) -> TiState -> TiState
@@ -294,147 +462,3 @@ primConstr tag arity (stack, dump, heap, globals, stats)
       newStack = drop arity stack
       rootOfRedex = head newStack
       newHeap = hUpdate heap rootOfRedex (NData tag args)
-
-getArgs :: TiHeap -> TiStack -> [Addr]
-getArgs heap (_ : stack) = map getArg stack
-  where
-    getArg addr = arg where (NAp _ arg) = hLookup heap addr
-getArgs _ [] = []
-
-instantiate :: Expr -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
-instantiate (ExprNumber n) heap _ = hAlloc heap (NNum n)
-instantiate (ExprApplication e1 e2) heap env = hAlloc heap2 (NAp a1 a2)
-  where
-    (heap1, a1) = instantiate e1 heap  env
-    (heap2, a2) = instantiate e2 heap1 env
-instantiate (ExprVariable v) heap env = (heap, assocLookup v env ("Undefined name " <> v))
-instantiate (ExprConstructor tag arity) heap env = instantiateConstr tag arity heap env
-instantiate (ExprLet defs body) heap oldEnv =
-  instantiate body heap1 newEnv
-  where
-    (heap1, extraBindings) = mapAccumL instantiateRhs heap defs
-    newEnv = oldEnv ++ extraBindings
-    instantiateRhs heap3 (name, rhs) = (heap2, (name, addr))
-      where (heap2, addr) = instantiate rhs heap3 newEnv
-instantiate (ExprCase _ _) _ _ = error "Can't instantiate case exprs"
-instantiate (ExprLambda _ _ ) _ _ = error "Can't instantiate lambda exprs"
-
-instantiateAndUpdate :: Expr -> Addr -> TiHeap -> Assoc Text Addr -> TiHeap
-instantiateAndUpdate (ExprNumber n) updateAddr heap env =
-  hUpdate heap updateAddr (NNum n)
-instantiateAndUpdate (ExprApplication a b) updateAddr heap env =
-  hUpdate heap2 updateAddr (NAp x y)
-  where
-    (heap1, x) = instantiate a heap env
-    (heap2, y) = instantiate b heap1 env
-instantiateAndUpdate (ExprVariable v) updateAddr heap env =
-  hUpdate heap updateAddr (NInd varAddr)
-  where
-    varAddr = assocLookup v env ("Undefined name " <> v)
-instantiateAndUpdate (ExprLet defs body) updateAddr heap oldEnv =
-  instantiateAndUpdate body updateAddr heap1 newEnv
-  where
-    (heap1, extraBindings) = mapAccumL instantiateRhs heap defs
-    newEnv = extraBindings ++ oldEnv
-    instantiateRhs heap (name, rhs) =
-      (heap1, (name, addr))
-      where
-        (heap1, addr) = instantiate rhs heap newEnv
-instantiateAndUpdate (ExprConstructor tag arity) updateAddr heap env =
-  hUpdate heap updateAddr . NPrim "Cons" $ primConstr tag arity
-
-instantiateConstr :: Tag -> Int -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
-instantiateConstr tag arity heap env =
-  hAlloc heap . NPrim "Cons" $ primConstr tag arity
-
--- | Show results
-showResults :: [TiState] -> Text
-showResults states = Text.concat $ Prelude.map showState states <> [showStats (last states)]
-
-showFinalResults :: [TiState] -> Text
-showFinalResults states = showFinalState $ last states
-
-showFinalState :: TiState -> Text
-showFinalState (stack, _, heap, _, _) = showFinalStack heap stack
-
-showFinalStack :: TiHeap -> TiStack -> Text
-showFinalStack heap stack = Text.intercalate "\n" (map showFinalStackItem stack)
-  where showFinalStackItem addr = showFinalNode $ hLookup heap addr
-
-showState :: TiState -> Text
-showState (stack, dump, heap, _, _) = Text.concat [showStack heap stack, "\n", showDump dump, "\n"]
-
-showStack :: TiHeap -> TiStack -> Text
-showStack heap stack = Text.concat [
-    "Stk [",
-    Text.intercalate "\n" (map showStackItem stack),
-    " ]"
-    ]
-  where
-    showStackItem addr = Text.concat [ showFWAddr addr, ": ",
-                                   showStkNode heap (hLookup heap addr)]
-
-showDump :: TiDump -> Text
-showDump dump = "Dump depth " <> tshow (length dump)
-
-showStkNode :: TiHeap -> Node -> Text
-showStkNode heap (NAp funAddr argAddr) =
-    Text.concat ["NAp ", showFWAddr funAddr, showDetail funAddr,
-             " ", showFWAddr argAddr, showDetail argAddr]
-  where
-    showDetail addr = Text.concat [" (", showNode (hLookup heap addr), ")"]
-showStkNode _ node = showNode node
-
-tshow = pack . show
-
-showNode :: Node -> Text
-showNode (NAp a1 a2) = Text.concat ["NAp ", showAddr a1, " ", showAddr a2]
-showNode (NSupercomb name _ _) = "NSupercomb " <> name
-showNode (NNum n) = "NNum " <> tshow n
-showNode (NInd addr) = "NInd " <> tshow addr
-showNode (NPrim name prim) = "NPrim " <> name
-showNode (NData tag compts) = "NData " <> tshow tag <> " [" <> Text.intercalate "," (map showAddr compts) <> "]"
-
-showFinalNode :: Node -> Text
-showFinalNode (NAp a1 a2) = Text.concat ["<application:", showAddr a1, ",", showAddr a2, ">"]
-showFinalNode (NSupercomb name _ _) = "<combinator:" <> name <> ">"
-showFinalNode (NInd addr) = "<indirection:" <> tshow addr <> ">"
-showFinalNode (NNum n) = tshow n
-showFinalNode (NPrim name prim) = "<primitive:(" <> name <> ")>"
-showFinalNode node@(NData tag compts) = "<data:{" <> tshow tag <> "," <> Text.intercalate "\n" (map tshow compts) <> "}>"
-
-showAddr :: Addr -> Text
-showAddr addr = tshow addr
-
-showFWAddr :: Addr -> Text
-showFWAddr addr = genSpaces (4 - Text.length str) <> str
-  where
-    str = tshow addr
-    genSpaces n = pack $ replicate n ' '
-
-showStats :: TiState -> Text
-showStats (_, _, heap, _, stats) =
-    Text.concat ["Total number of steps = ",
-             tshow (tiStatGetSteps stats),
-             "\n\n",
-             showHeap heap]
-
-showHeap :: TiHeap -> Text
-showHeap heap = Text.concat ["Heap:",
-    (Text.concat $ map showHeapAddr addrs)]
-  where
-    addrs = sort $ hAddresses heap
-    showHeapAddr addr = Text.concat ["\n", tshow addr, " ", showNode (hLookup heap addr)]
-
-tiStatInitial :: TiStats
-tiStatInitial = TiStats 0
-
-tiStatIncSteps :: TiStats -> TiStats
-tiStatIncSteps (TiStats n) = TiStats $ n + 1
-
-tiStatGetSteps :: TiStats -> Int
-tiStatGetSteps (TiStats n) = n
-
-applyToStats :: (TiStats -> TiStats) -> TiState -> TiState
-applyToStats statsFun (stack, dump, heap, scDefs, stats) =
-  (stack, dump, heap, scDefs, statsFun stats)

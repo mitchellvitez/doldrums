@@ -7,7 +7,7 @@ where
 
 import Template
 import Parse (parseProgram)
-import Text.Megaparsec (parse)
+import Text.Megaparsec (parse, errorBundlePretty)
 import System.Environment (getArgs)
 import Control.Monad (when)
 
@@ -44,7 +44,7 @@ runBase :: Text -> (Text -> IO a) -> Bool -> IO a
 runBase programText strat debug = do
   preludeFile <- readFile "src/Prelude.dol"
   case parse parseProgram "" (pack preludeFile) of
-    Left e -> error "error parsing prelude"
+    Left e -> error $ errorBundlePretty e
     Right prelude -> do
 
       when debug $ do
@@ -52,7 +52,7 @@ runBase programText strat debug = do
         mapM_ tprint $ Text.lines programText
 
       case parse parseProgram "" programText of
-        Left e -> error $ show e
+        Left e -> error $ errorBundlePretty e
         Right program -> do
 
           when debug $ do

@@ -2,7 +2,7 @@
 
 &ldquo;You can swim all day in the Sea of Knowledge and not get wet.&rdquo;
 
-&ndash; Norton Juster
+&ndash; Norton Juster, _The Phantom Tollbooth_
 
 ## About the project
 
@@ -116,6 +116,4 @@ Precedence | Associativity | Operator
 
 ## How can I do this?
 
-I learned this material from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial) with help from a few friends.
-
-I can be your friend if you want help understanding this project: [mitchell@vitez.me](mailto:mitchell@vitez.me)
+Learn Megaparsec or another a parsing library, I don't fully remember how I did that. I got the Template Instantiation material (`src/Template.hs`) from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add typechecking. Some issues were debugged more quickly thanks to help from friends.

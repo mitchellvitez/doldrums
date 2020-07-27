@@ -8,7 +8,7 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
-data PartialExpr = NoOp | FoundOp Text Expr
+data PartialExpr = NoOp | FoundOp Name Expr
 
 spaceConsumer =
   L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
@@ -36,7 +36,6 @@ parseSupercombinator = do
 parseExpr :: Parser Expr
 parseExpr =
   try parseExprLet    <|>
-  try parseExprCase   <|>
   try parseExprLambda <|>
   parseExpr0
 
@@ -92,7 +91,9 @@ parseExpr4 = assembleOp <$> parseExpr5 <*> parseExpr4Partial
 
 parseExpr4Partial :: Parser PartialExpr
 parseExpr4Partial =
-      parsePartialOp "+" parseExpr4
+      try (parsePartialOp "+." parseExpr4)
+  <|> try (parsePartialOp "-." parseExpr4)
+  <|> parsePartialOp "+" parseExpr4
   <|> parsePartialOp "-" parseExpr4
   <|> parseEmpty
 
@@ -101,14 +102,29 @@ parseExpr5 = assembleOp <$> parseExpr6 <*> parseExpr5Partial
 
 parseExpr5Partial :: Parser PartialExpr
 parseExpr5Partial =
-      parsePartialOp "*" parseExpr5
+      try (parsePartialOp "*." parseExpr5)
+  <|> try (parsePartialOp "/." parseExpr5)
+  <|> parsePartialOp "*" parseExpr5
   <|> parsePartialOp "/" parseExpr5
   <|> parseEmpty
 
 parseExpr6 :: Parser Expr
-parseExpr6 = parseExprApplication
+parseExpr6 =
+  parseNot <|>
+  parseNegate <|>
+  parseExprApplication
 
-parsePartialOp :: Text -> Parser Expr -> Parser PartialExpr
+parseNot = do
+  char '!'
+  expr <- parseExpr6
+  pure $ ExprApplication (ExprVariable "!") expr
+
+parseNegate = do
+  char '~'
+  expr <- parseExpr6
+  pure $ ExprApplication (ExprVariable "~") expr
+
+parsePartialOp :: Name -> Parser Expr -> Parser PartialExpr
 parsePartialOp opcode parserLevel = do
   op <- lexeme $ string opcode
   rest <- parserLevel
@@ -117,7 +133,7 @@ parsePartialOp opcode parserLevel = do
 parseAtomicExpr :: Parser Expr
 parseAtomicExpr =
   parseExprVariable    <|>
-  parseExprNumber      <|>
+  parseExprLiteral     <|>
   parseExprConstructor <|>
   parseExprParenthesized
 
@@ -128,8 +144,12 @@ parseExprParenthesized = do
   lexeme $ char ')'
   pure body
 
-parseExprNumber :: Parser Expr
-parseExprNumber = ExprNumber <$> parseInt
+parseExprLiteral :: Parser Expr
+parseExprLiteral =
+  ExprLiteral . ValueInt  . toInteger <$> parseInt <|>
+  ExprLiteral . ValueDouble <$> parseDouble <|>
+  ExprLiteral . ValueBool   <$> parseBool   <|>
+  ExprLiteral . ValueString <$> parseString
 
 parseExprVariable :: Parser Expr
 parseExprVariable = ExprVariable <$> parseName
@@ -159,24 +179,6 @@ parseDefinition = do
   body <- parseExpr
   pure (name, body)
 
-parseExprCase :: Parser Expr
-parseExprCase = do
-  lexeme $ string "case"
-  scrutinee <- parseExpr
-  lexeme $ string "of"
-  alternatives <- parseAlternative `sepBy1` lexeme (char ',')
-  pure $ ExprCase scrutinee alternatives
-
-parseAlternative :: Parser Alternative
-parseAlternative = do
-  lexeme $ char '<'
-  tag <- parseInt
-  lexeme $ char '>'
-  boundVars <- many parseName
-  lexeme $ string "->"
-  result <- parseExpr
-  pure (tag, boundVars, result)
-
 parseExprLambda :: Parser Expr
 parseExprLambda = do
   lexeme $ char '\\'
@@ -196,6 +198,19 @@ makeApplicationChain exprs = Prelude.foldl ExprApplication (Prelude.head exprs) 
 parseInt :: Parser Int
 parseInt = lexeme L.decimal
 
+parseDouble :: Parser Double
+parseDouble = L.float
+
+parseBool :: Parser Bool
+parseBool = do
+  s <- string "True" <|> string "False"
+  pure $ case s of
+    "True" -> True
+    "False" -> False
+
+parseString :: Parser Text
+parseString = char '"' >> pack <$> manyTill L.charLiteral (char '"')
+
 parseName :: Parser Name
 parseName = lexeme $ try $ do
   first <- letterChar
@@ -212,4 +227,4 @@ parseNameChar =
   char '_'
 
 keywords :: [Text]
-keywords = ["let", "case", "in", "of", "Pack"]
+keywords = ["let", "in", "of", "Pack"]

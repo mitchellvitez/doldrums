@@ -13,12 +13,13 @@ synopsis:            A small, purely functional programming language.
 description:         Please see the README on GitHub at <https://github.com/mitchellvitez/doldrums#readme>
 
 dependencies:
-- base       >= 4.7 && < 5
-- text       >= 1.2 && < 2
-- megaparsec >= 8.0 && < 9
-- hspec      >= 2.7 && < 3
-- containers >= 0.6 && < 1
-- heap       >= 1.0 && < 2
+- base        >= 4.7  && < 5
+- text        >= 1.2  && < 2
+- megaparsec  >= 8.0  && < 9
+- hspec       >= 2.7  && < 3
+- containers  >= 0.6  && < 1
+- heap        >= 1.0  && < 2
+- constraints >= 0.12 && < 1
 
 library:
   source-dirs: src
@@ -48,3 +49,8 @@ tests:
 default-extensions:
   - OverloadedStrings
   - LambdaCase
+  - GADTs
+  - StandaloneDeriving
+  - TypeOperators
+  - KindSignatures
+  - TypeApplications

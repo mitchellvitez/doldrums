@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c37804fdc7fa110810edc8f3e392968df5c9c75bb394298a3d6e8c39c317c03d
+-- hash: 710c3891f6740c2d312ae7e11bec48d3ad08c2af90b5f3cb276a7c54947f8f43
 
 name:           doldrums
 version:        0.1.0.0
@@ -30,13 +30,15 @@ library
       Lib
       Parse
       Template
+      Typecheck
   other-modules:
       Paths_doldrums
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings LambdaCase
+  default-extensions: OverloadedStrings LambdaCase GADTs StandaloneDeriving TypeOperators KindSignatures TypeApplications
   build-depends:
       base >=4.7 && <5
+    , constraints >=0.12 && <1
     , containers >=0.6 && <1
     , heap >=1.0 && <2
     , hspec >=2.7 && <3
@@ -50,10 +52,11 @@ executable doldrums-exe
       Paths_doldrums
   hs-source-dirs:
       app
-  default-extensions: OverloadedStrings LambdaCase
+  default-extensions: OverloadedStrings LambdaCase GADTs StandaloneDeriving TypeOperators KindSignatures TypeApplications
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , constraints >=0.12 && <1
     , containers >=0.6 && <1
     , doldrums
     , heap >=1.0 && <2
@@ -69,10 +72,11 @@ test-suite doldrums-test
       Paths_doldrums
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings LambdaCase
+  default-extensions: OverloadedStrings LambdaCase GADTs StandaloneDeriving TypeOperators KindSignatures TypeApplications
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , constraints >=0.12 && <1
     , containers >=0.6 && <1
     , doldrums
     , heap >=1.0 && <2
