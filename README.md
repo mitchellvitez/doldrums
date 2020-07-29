@@ -4,18 +4,11 @@
 
 &ndash; Norton Juster, _The Phantom Tollbooth_
 
-## About the project
+## About
 
-- What?
-  - Doldrums is a small, purely functional programming language with an emphasis on ease of top-to-bottom understanding.
-- Why?
-  - I've been meaning to play with a more involved language ever since making [Pixll](https://github.com/mitchellvitez/raspi-lights). This is a great way for me to learn. It's probably not very useful for anything in practice.
-- Who?
-  - Mitchell Vitez
-- When?
-  - Summer 2020
-- How?
-  - The compiler is written in Haskell. Run `stack run test.dol` to see an example.
+Doldrums is a small, purely functional programming language with an emphasis on ease of top-to-bottom understanding. I've been meaning to play with a language like this ever since making [Pixll](https://github.com/mitchellvitez/raspi-lights). This is a great way for me to learn. It's probably not very useful for anything in practice.
+
+The compiler is written in Haskell. Run `stack run test.dol` to see an example.
 
 ### Structure
 
@@ -71,6 +64,29 @@ is equivalent to
 main = f $ g $ h x;
 ```
 
+### Typechecking
+
+Doldrums has a very simple typechecking mechanism, to ensure that certain kinds of invalid programs aren't allowed. For example, this program will fail to typecheck:
+
+```
+main = 7 + "hello";
+```
+
+So will this one, since you can't apply literals:
+
+```
+main = 1 2 3;
+```
+
+However, the mechanism currently only infers types within combinators, not across them. See this program for an example:
+
+```
+func x = x + 7;
+main = func "hello";
+```
+
+The list of types is short: `Bool`, `Int`, `Double`, `String`, and `Constr`. They are inferred purely from the usage of literals and the combinations of those usages.
+
 ### Let expressions
 
 You can define variables to be used in an expression with `let`...`in`
@@ -101,9 +117,13 @@ Precedence | Associativity | Operator
 -----------|---------------|---------
 6          | left          | _function application_
 5          | right         | *
+5          |               | *.
 5          |               | /
+5          |               | /.
 4          | right         | +
+4          |               | +.
 4          |               | -
+4          |               | -.
 3          |               | ==
 3          |               | !=
 3          |               | >
@@ -116,4 +136,4 @@ Precedence | Associativity | Operator
 
 ## How can I do this?
 
-Learn Megaparsec or another a parsing library, I don't fully remember how I did that. I got the Template Instantiation material (`src/Template.hs`) from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add typechecking. Some issues were debugged more quickly thanks to help from friends.
+I'd recommend using Megaparsec or another parsing library to make that part easier to write. I got the Template Instantiation material (`src/Template.hs`) from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add typechecking. Some issues were debugged more quickly thanks to help from friends.

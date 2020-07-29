@@ -1,6 +1,5 @@
 module Language where
 
-import Data.Constraint
 import Data.Text (Text, pack, intercalate)
 
 -- a Doldrums program is a collection of supercombinators

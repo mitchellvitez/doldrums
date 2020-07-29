@@ -52,3 +52,5 @@ default-extensions:
   - GADTs
   - TypeOperators
   - KindSignatures
+  - StandaloneDeriving
+  - BangPatterns

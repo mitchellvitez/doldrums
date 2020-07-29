@@ -7,11 +7,13 @@ where
 
 import Template
 import Parse (parseProgram)
-import Text.Megaparsec (parse, errorBundlePretty)
-import System.Environment (getArgs)
-import Control.Monad (when)
+import Typecheck
 
+import Control.Exception (throw)
+import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
+import System.Environment (getArgs)
+import Text.Megaparsec (parse, errorBundlePretty)
 import qualified Data.Text as Text
 
 tprint :: Text -> IO ()
@@ -59,6 +61,8 @@ runBase programText strat debug = do
             putStrLn "\n -- AST -- "
             print program
 
+          let !checked = map (\(name, args, body) -> typedcheck body) program
+          when (Fail `elem` checked) $ throw TypeCheckingException
           let state = compile prelude program
           let evaluated = eval state
           let result = showResults evaluated

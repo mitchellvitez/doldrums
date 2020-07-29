@@ -227,4 +227,4 @@ parseNameChar =
   char '_'
 
 keywords :: [Text]
-keywords = ["let", "in", "of", "Pack"]
+keywords = ["let", "in", "of", "Pack", "True", "False"]

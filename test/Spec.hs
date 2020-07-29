@@ -3,6 +3,7 @@
 import Language
 import Parse
 import Lib (runTest)
+import Typecheck
 
 import Control.Monad (void)
 import Data.Either
@@ -23,8 +24,19 @@ testProgram :: Text -> Text -> Expectation
 testProgram programText expectedOutput = do
   runTest programText `shouldReturn` expectedOutput
 
+testProgramException :: Text -> Text -> Expectation
+testProgramException programText expectedOutput = do
+  runTest programText `shouldThrow` anyException
+
 main :: IO ()
 main = hspec $ do
+  describe "typechecking" $ do
+    it "num plus string - parses" $ do
+      testParser parseProgram "main = 1 + \"hello\";" [("main", [], (ExprApplication (ExprApplication (ExprVariable "+") (ExprLiteral (ValueInt 1))) (ExprLiteral (ValueString "hello"))))]
+
+    it "num plus string" $ do
+      testProgram "main = 1 + \"hello\";" "error"
+
   describe "program output" $ do
     it "constant" $ do
       testProgram "main = 3;" "3"
