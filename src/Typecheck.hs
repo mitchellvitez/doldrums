@@ -3,6 +3,7 @@ module Typecheck where
 import Language
 
 import Data.Constraint
+import Data.Functor.Product
 import Data.Kind hiding (Type)
 import Data.Text (Text)
 
@@ -74,24 +75,23 @@ data TypedUnOp inTy outTy where
   TNeg :: Num ty => TypedUnOp ty ty
 
 data Type ty where
-  Bool :: Type Bool
-  Int :: Type Int
-  Double :: Type Double
-  String :: Type Text
+  DBool :: Type Bool
+  DInt :: Type Integer
+  DDouble :: Type Double
+  DString :: Type Text
 
-data (f :*: g) x = f x :*: g x
-
--- type TypedExpression x = TypedExpr x :*: Type x
+type TypedExpression = Product TypedExpr Type
 
 data A (f :: * -> *) = forall x. A (f x)
 
+-- TODO
 -- typecheck :: Expr -> A TypedExpression
-typecheck expr = case expr of
-  ExprLiteral (ValueInt n)  -> TypedExprLiteral n
-  ExprVariable name         -> TypedExprVariable name
-  ExprConstructor tag arity -> TypedExprConstructor tag arity
-  -- ExprLet bindings body     -> TypedExprLet bindings body
-  -- ExprLambda vars body      -> TypedExprLambda vars body
-  -- ExprApplication e1 e2     -> TypedExprApplication e1 e2
-  -- TypedExprBinOp, TypedExprUnOp
-  -- TODO
+-- typecheck expr = case expr of
+--   ExprLiteral (ValueInt n)  -> _
+--   ExprLiteral (ValueInt n)  -> _
+--   ExprVariable name         -> _
+--   ExprConstructor tag arity -> _
+--   ExprLet bindings body     -> _
+--   ExprLambda vars body      -> _
+--   ExprApplication e1 e2     -> _
+--   -- TypedExprBinOp, TypedExprUnOp
