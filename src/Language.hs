@@ -1,14 +1,21 @@
 module Language where
 
 import Data.Text (Text, pack, intercalate)
+import Text.Megaparsec (SourcePos)
 
 -- a Doldrums program is a collection of supercombinators
 type Program = [SupercombinatorDefinition]
 
-type SupercombinatorDefinition =
-  (Name, [Name], Expr) -- ^ name, list of arguments, body
-
 type Name = Text
+
+type SupercombinatorDefinition =
+  (Name, [Name], Annotated Expr) -- ^ name, list of arguments, body
+
+data Annotation = Annotation { sourcePos :: SourcePos }
+  deriving (Eq, Show)
+
+data Annotated e = Annotated e Annotation
+  deriving (Eq, Show)
 
 data Expr
   = ExprVariable Name

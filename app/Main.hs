@@ -3,4 +3,4 @@ module Main where
 import Lib
 
 main :: IO ()
-main = run
+main = runDebug -- change this to `run` for clean output
