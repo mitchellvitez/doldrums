@@ -9,11 +9,14 @@ import Template
 import Parse (parseProgram)
 import Typecheck
 
-import Control.Exception (throw)
+import Control.DeepSeq (force)
+import Control.Exception (throw, catch, evaluate)
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
-import Text.Megaparsec (parse, errorBundlePretty)
+import System.Exit (exitFailure)
+import Text.Megaparsec (parse, errorBundlePretty, SourcePos(..))
+import Text.Megaparsec.Pos (sourcePosPretty, unPos)
 import qualified Data.Text as Text
 
 tprint :: Text -> IO ()
@@ -42,39 +45,44 @@ getFileText = do
   input <- readFile $ head args
   pure $ pack input
 
+debug :: Bool -> Text -> IO () -> IO ()
+debug isDebug label action = when isDebug $ do
+  tprint $ "\n -- " <> label <> " -- "
+  action
+
 runBase :: Text -> (Text -> IO a) -> Bool -> IO a
-runBase programText strat debug = do
+runBase programText strat isDebug = do
   preludeFile <- readFile "src/Prelude.dol"
   case parse parseProgram "" (pack preludeFile) of
     Left e -> error $ errorBundlePretty e
     Right prelude -> do
 
-      when debug $ do
-        putStrLn "\n -- INPUT -- "
-        mapM_ tprint $ Text.lines programText
+      debug isDebug "INPUT" $ mapM_ tprint $ Text.lines programText
 
       case parse parseProgram "" programText of
         Left e -> error $ errorBundlePretty e
         Right program -> do
-
-          when debug $ do
-            putStrLn "\n -- AST -- "
-            print program
+          debug isDebug "AST" $ print program
 
           -- need to force evaluation here, so it's strict
-          let !types = typecheck program
+          let
+            typecheckingFailureHandler (TypeCheckingException pos@(SourcePos name line column) msg) = do
+              putStrLn $ "Typechecking failure at " <> sourcePosPretty pos
+              putStrLn $ replicate (unPos line - 1) '-' <> "v"
+              tprint $ Text.lines programText !! (unPos line - 1)
+              putStrLn $ replicate (unPos line - 1) '-' <> "^"
+              putStrLn msg
+              exitFailure
+          types <- evaluate (force $ typecheck program) `catch` typecheckingFailureHandler
+          debug isDebug "TYPES" $ print types
 
-          when debug $ do
-            putStrLn "\n -- TYPES -- "
-            print types
+          -- TODO: replace the below with LLVM
 
-          let state = compile prelude program
-          let evaluated = eval state
-          let result = showResults evaluated
+          let !state = compile prelude program
+          -- debug isDebug "STATE" $ print state
 
-          when debug $ do
-            putStrLn "\n -- EVALUATION -- "
-            tprint result
-            putStrLn "\n -- OUTPUT -- "
+          let !evaluated = eval state
+          -- debug isDebug "EVALUATION" . tprint $ showResults evaluated
 
+          debug isDebug "OUTPUT" $ pure ()
           strat $ showFinalResults evaluated

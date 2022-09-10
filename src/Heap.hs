@@ -14,6 +14,7 @@ module Heap
 type Addr = Int
 
 data Heap a = Heap Addr [Addr] [(Addr, a)]
+  deriving (Show)
 
 hInitial :: Heap a
 hInitial = Heap 0 [1..] []

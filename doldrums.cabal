@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 38e5648782115ad6e549466f3a875f05653746bc749ddf948c18afee9e5f63f7
+-- hash: c98258d23e26b69a2eda3f4d12dcc6c0f85ea69f7c058abf9d426ed415ab9430
 
 name:           doldrums
 version:        0.1.0.0
@@ -47,6 +47,7 @@ library
       base >=4.7 && <5
     , constraints >=0.12 && <1
     , containers >=0.6 && <1
+    , deepseq >=1.4 && <2
     , heap >=1.0 && <2
     , hspec >=2.7 && <3
     , megaparsec >=8.0 && <9
@@ -72,6 +73,7 @@ executable doldrums-exe
       base >=4.7 && <5
     , constraints >=0.12 && <1
     , containers >=0.6 && <1
+    , deepseq >=1.4 && <2
     , doldrums
     , heap >=1.0 && <2
     , hspec >=2.7 && <3
@@ -99,6 +101,7 @@ test-suite doldrums-test
       base >=4.7 && <5
     , constraints >=0.12 && <1
     , containers >=0.6 && <1
+    , deepseq >=1.4 && <2
     , doldrums
     , heap >=1.0 && <2
     , hspec >=2.7 && <3

@@ -20,6 +20,7 @@ dependencies:
 - containers  >= 0.6  && < 1
 - heap        >= 1.0  && < 2
 - constraints >= 0.12 && < 1
+- deepseq     >= 1.4  && < 2
 
 library:
   source-dirs: src

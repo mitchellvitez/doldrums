@@ -12,3 +12,15 @@ f x y =
     fst $ snd $ snd $ snd a;
 
 main = f three four;
+
+fib n =
+  if (n == 0) 1 $
+  if (n == 1) 1 $
+  fib (n - 1) + fib (n - 2);
+
+/* add a b = a + b; */
+/* pair x y f = f x y; */
+/* main = add 1 2; */
+
+/* func x = x + 7; */
+/* main = func "hello"; */

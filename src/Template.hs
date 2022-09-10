@@ -1,3 +1,5 @@
+{-# language FlexibleInstances #-}
+
 module Template
  ( eval
  , compile
@@ -16,6 +18,9 @@ import Data.Void (Void)
 
 type TiState = (TiStack, TiDump, TiHeap, TiGlobals, TiStats)
 
+instance {-# OVERLAPPING #-} Show TiState where
+  show (stack, dump, _heap, globals, stats) = show (stack, dump, globals, stats)
+
 type TiStack = [Addr]
 
 type TiDump = [TiStack]
@@ -29,9 +34,13 @@ type Assoc a b = [(a, b)]
 
 type TiGlobals = Assoc Text Addr
 
-data TiStats = TiStats Int
+newtype TiStats = TiStats Int
+  deriving Show
 
 type Primitive = TiState -> TiState
+
+instance Show Primitive where
+  show _ = "<<primitive>>"
 
 type Tag = Int
 
@@ -42,6 +51,7 @@ data Node
   | NInd Addr
   | NPrim Name Primitive
   | NData Tag [Addr]
+  deriving Show
 
 assocLookup :: Eq a => a -> Assoc a b -> Text -> b
 assocLookup _ [] errMsg = error $ show errMsg
