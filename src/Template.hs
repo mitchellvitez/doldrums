@@ -64,7 +64,7 @@ buildInitialHeap scDefs =
     (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
 
 allocateSc :: TiHeap -> SupercombinatorDefinition -> (TiHeap, (Name, Addr))
-allocateSc heap (name, args, body) = (heap', (name, addr))
+allocateSc heap (name, args, Annotated body _) = (heap', (name, addr))
   where
     (heap', addr) = hAlloc heap (NSupercomb name args body)
 

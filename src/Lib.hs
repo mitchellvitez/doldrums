@@ -61,8 +61,13 @@ runBase programText strat debug = do
             putStrLn "\n -- AST -- "
             print program
 
-          let !checked = map (\(name, args, body) -> typedcheck body) program
-          when (Fail `elem` checked) $ throw TypeCheckingException
+          -- need to force evaluation here, so it's strict
+          let !types = typecheck program
+
+          when debug $ do
+            putStrLn "\n -- TYPES -- "
+            print types
+
           let state = compile prelude program
           let evaluated = eval state
           let result = showResults evaluated

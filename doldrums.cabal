@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: bc44549ef26b7ae3808fd730bdc9790d3d1877885a5a664948b2b69fb7f89f78
+-- hash: 38e5648782115ad6e549466f3a875f05653746bc749ddf948c18afee9e5f63f7
 
 name:           doldrums
 version:        0.1.0.0
@@ -35,7 +35,14 @@ library
       Paths_doldrums
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings LambdaCase GADTs TypeOperators KindSignatures StandaloneDeriving BangPatterns
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+      GADTs
+      TypeOperators
+      KindSignatures
+      StandaloneDeriving
+      BangPatterns
   build-depends:
       base >=4.7 && <5
     , constraints >=0.12 && <1
@@ -52,7 +59,14 @@ executable doldrums-exe
       Paths_doldrums
   hs-source-dirs:
       app
-  default-extensions: OverloadedStrings LambdaCase GADTs TypeOperators KindSignatures StandaloneDeriving BangPatterns
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+      GADTs
+      TypeOperators
+      KindSignatures
+      StandaloneDeriving
+      BangPatterns
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
@@ -72,7 +86,14 @@ test-suite doldrums-test
       Paths_doldrums
   hs-source-dirs:
       test
-  default-extensions: OverloadedStrings LambdaCase GADTs TypeOperators KindSignatures StandaloneDeriving BangPatterns
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+      GADTs
+      TypeOperators
+      KindSignatures
+      StandaloneDeriving
+      BangPatterns
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5

@@ -3,88 +3,11 @@ module Typecheck where
 import Language
 
 import Control.Exception
-import Data.Constraint
-import Data.Functor.Product
+import Data.Foldable (fold)
 import Data.Kind hiding (Type)
 import Data.Text (Text)
 import Data.Void
-
-data TypedExpr ty where
-  TypedExprVariable :: Name -> TypedExpr ty
-  TypedExprLiteral :: ty -> TypedExpr ty
-  TypedExprLet :: [(Name, TypedExpr ty1)] -> TypedExpr t2 -> TypedExpr ty
-  TypedExprConstructor :: Int -> Int -> TypedExpr ty
-  TypedExprApplication :: TypedExpr ty1 -> TypedExpr ty2 -> TypedExpr ty
-  TypedExprLambda :: [Name] -> TypedExpr ty
-
-data Op
-  = Binary BinOp
-  | Unary UnOp
-  deriving (Show, Eq)
-
-data UnOp
-  = Neg -- ~
-  | Not -- !
-  deriving (Show, Eq)
-
-data BinOp
-  = Ap  -- $
-  | Or  -- ||
-  | And -- &&
-  | Geq -- >=
-  | Leq -- <=
-  | Eq  -- ==
-  | Neq -- !=
-  | Gt  -- >
-  | Lt  -- <
-  | Add -- +
-  | Sub -- -
-  | Mul -- *
-  | Div -- div
-  | AddFloat -- +.
-  | SubFloat -- -.
-  | MulFloat -- *.
-  | DivFloat -- /.
-  deriving (Show, Eq)
-
-data TypedOp inTy outTy
-  = TBinary (TypedBinOp inTy outTy)
-  | TUnary  (TypedUnOp  inTy outTy)
-
-data TypedBinOp inTy outTy where
-  TAp  :: TypedBinOp inTy outTy -- TODO check this
-  TOr  :: TypedBinOp Bool Bool
-  TAnd :: TypedBinOp Bool Bool
-  TGeq :: Ord inTy => TypedBinOp inTy Bool
-  TLeq :: Ord inTy => TypedBinOp inTy Bool
-  TEq  :: Eq  inTy => TypedBinOp inTy Bool
-  TNeq :: Eq  inTy => TypedBinOp inTy Bool
-  TGt  :: Ord inTy => TypedBinOp inTy Bool
-  TLt  :: Ord inTy => TypedBinOp inTy Bool
-  TAdd :: Num inTy => TypedBinOp inTy inTy
-  TSub :: Num inTy => TypedBinOp inTy inTy
-  TMul :: Num inTy => TypedBinOp inTy inTy
-  TDiv :: Num inTy => TypedBinOp inTy inTy
-  TAddFloat :: Num inTy => TypedBinOp inTy inTy
-  TSubFloat :: Num inTy => TypedBinOp inTy inTy
-  TMulFloat :: Num inTy => TypedBinOp inTy inTy
-  TDivFloat :: Num inTy => TypedBinOp inTy inTy
-
-data TypedUnOp inTy outTy where
-  TNot :: TypedUnOp Bool Bool
-  TNeg :: Num ty => TypedUnOp ty ty
-
-data Type ty where
-  Bool :: Type Bool
-  Int :: Type Integer
-  Double :: Type Double
-  String :: Type Text
-  Constr :: Type Void
-  Other :: Type Void
-
-type TypedExpression = Product TypedExpr Type
-
-data A (f :: * -> *) = forall x. A (f x)
+import Text.Megaparsec.Pos (sourcePosPretty)
 
 data SimpleType
   = TBool
@@ -92,20 +15,21 @@ data SimpleType
   | TDouble
   | TString
   | TConstr
-  | TUnknown
+  | TUnknown -- defer typechecking until we can infer from somewhere else
   deriving (Eq, Show)
 
-data Typed e
-  = Typed e SimpleType
-  | Fail
+data Typed e = Typed e SimpleType
   deriving (Eq, Show)
 
-data TypeCheckingException = TypeCheckingException
+data TypeCheckingException = TypeCheckingException String
   deriving (Eq, Show)
 instance Exception TypeCheckingException
 
-typedcheck :: Expr -> Typed Expr
-typedcheck expr = case expr of
+typecheck :: Program -> [Typed Expr]
+typecheck = map (\(_name, _args, body) -> typecheckExpr body)
+
+typecheckExpr :: Annotated Expr -> Typed Expr
+typecheckExpr (Annotated expr annotation@(Annotation pos)) = case expr of
   e@(ExprLiteral (ValueInt n))    -> Typed e TInt
   e@(ExprLiteral (ValueDouble n)) -> Typed e TDouble
   e@(ExprLiteral (ValueBool b))   -> Typed e TBool
@@ -113,43 +37,24 @@ typedcheck expr = case expr of
   e@(ExprVariable name)           -> Typed e TUnknown
   e@(ExprConstructor tag arity)   -> Typed e TConstr
   e@(ExprLambda vars body) ->
-    case typedcheck body of
+    case typecheckExpr (Annotated body annotation) of
       Typed _ t -> Typed e t
-      Fail -> Fail
   e@(ExprApplication e1 e2) ->
     case e1 of
-      ExprLiteral _ -> Fail
-      ExprConstructor _ _ -> Fail
-      _ -> case (typedcheck e1, typedcheck e2) of
-        (Fail, _) -> Fail
-        (_, Fail) -> Fail
+      ExprLiteral _ -> throw $ TypeCheckingException "Trying to apply a literal"
+      ExprConstructor _ _ -> throw $ TypeCheckingException "Trying to apply a constructor"
+      _ -> case (typecheckExpr (Annotated e1 annotation), typecheckExpr (Annotated e2 annotation)) of
         (Typed _ t1, Typed _ t2) -> case (t1, t2) of
           (TUnknown, t) -> Typed e t
           (t, TUnknown) -> Typed e t
-          (a, b) -> if a == b then Typed e a else Fail
+          (a, b) -> if a == b then Typed e a else (throw $ TypeCheckingException $ fold
+            [ "Type mismatch at "
+            , sourcePosPretty pos
+            , ", "
+            , show a
+            , " does not match "
+            , show b
+            ])
   e@(ExprLet bindings body) ->
-    case typedcheck body of
+    case typecheckExpr (Annotated body annotation) of
       Typed _ t -> Typed e t
-      Fail -> Fail
-
-typecheck :: Expr -> A TypedExpression
-typecheck expr = case expr of
-  ExprLiteral (ValueInt n)     -> A $ Pair (TypedExprLiteral n) Int
-  ExprLiteral (ValueDouble n)  -> A $ Pair (TypedExprLiteral n) Double
-  ExprLiteral (ValueBool n)    -> A $ Pair (TypedExprLiteral n) Bool
-  ExprLiteral (ValueString n)  -> A $ Pair (TypedExprLiteral n) String
-  ExprVariable name            -> A $ Pair (TypedExprVariable name) Other
-  ExprConstructor tag arity    -> A $ Pair (TypedExprConstructor tag arity) Constr
-  ExprLambda vars body         -> typecheck body
-  ExprApplication e1 e2        ->
-    case (typecheck e1, typecheck e2) of
-      (A (Pair x a), A (Pair y b)) -> A $ Pair (TypedExprApplication x y) a
-
-  -- TODO: let
-  -- ExprLet bindings body        ->
-  --   case typecheck body of
-  --     A (Pair x a) ->
-  --       A $ Pair (TypedExprLet (map typecheckBinding bindings) x) a
-
--- typecheckBinding :: (Name, Expr) -> (Name, A TypedExpression)
--- typecheckBinding (name, expr) = (name, typecheck expr)

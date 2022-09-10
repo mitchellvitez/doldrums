@@ -29,9 +29,15 @@ parseSupercombinator = do
   name <- parseName
   vars <- many parseName
   lexeme $ char '='
-  body <- parseExpr
+  body <- parseAnnotatedExpr
   lexeme $ char ';'
   pure $ (name, vars, body)
+
+parseAnnotatedExpr :: Parser (Annotated Expr)
+parseAnnotatedExpr = do
+  expr <- parseExpr
+  sourcePos <- getSourcePos
+  pure $ Annotated expr $ Annotation sourcePos
 
 parseExpr :: Parser Expr
 parseExpr =
