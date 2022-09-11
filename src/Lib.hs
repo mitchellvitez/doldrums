@@ -9,6 +9,7 @@ import Template
 import Parse (parseProgram)
 import Typecheck
 import Language
+import Interpret
 
 import Control.DeepSeq (force)
 import Control.Exception (throw, catch, evaluate)
@@ -94,11 +95,19 @@ runBase programText strat isDebug = do
 
           -- TODO: replace the below with LLVM
 
+          -- template instantiation
+          {-
           let !state = compile prelude unnormalizedProgram
-          -- debug isDebug "STATE" $ print state
+          debug isDebug "STATE" $ print state
 
           let !evaluated = eval state
-          -- debug isDebug "EVALUATION" . tprint $ showResults evaluated
+          debug isDebug "EVALUATION" . tprint $ showResults evaluated
 
           debug isDebug "OUTPUT" $ pure ()
           strat $ showFinalResults evaluated
+          -}
+
+          -- lambda calculus interpreter
+          debug isDebug "OUTPUT" $ pure ()
+          let program = normalizeAST $ prelude <> unnormalizedProgram
+          strat $ interpret program

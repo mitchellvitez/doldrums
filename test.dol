@@ -1,8 +1,17 @@
 three = if (2 == 3 || 3 < 4) 3 7;
 four = ((1 + 6 - 2) * 4) / 5;
-f x = x + 1;
 
-main = 6.8234 +. 5.23;
+f x = x + 1;
+main = f three + four;
+
+/* f = 8; */
+/* c = f; */
+/* b = c; */
+/* a = b; */
+/* main = a; */
+
+/* main = (\x. x) 1; */
+
 
 /* pair x y f = f x y; */
 /* fst p = p K; */
