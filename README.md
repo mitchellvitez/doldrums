@@ -12,9 +12,9 @@ The compiler is written in Haskell. Run `stack run test.dol` to see an example.
 
 ### Structure
 
-I wrote the parsing using [Megaparsec](https://hackage.haskell.org/package/megaparsec).
+Compilation is split into several stages, and the code is split as well. The AST definition of the language lives in the `Language` module. Parsing happens in `Parse`, and typechecking in `Typecheck`. The `Template` module performs template instantiation to actually evaluate programs. 
 
-The `run` function performs each stage of the compilation pipeline. In order, it parses a small prelude (written in Doldrums), reads an input file, parses, typechecks, evaluates, and shows the program results.
+The `runBase` function in `Lib` performs each stage of the compilation pipeline. In order, it parses a small prelude (written in Doldrums), reads an input file, parses, typechecks, evaluates, and shows the program's result.
 
 ## The Doldrums language
 
@@ -64,7 +64,28 @@ is equivalent to
 main = f $ g $ h x;
 ```
 
-### Typechecking
+### Let expressions
+
+You can define variables to be used in an expression with `let`...`in`
+```
+let n = 0 in n
+```
+
+Multiple definitions should be separated by commas
+```
+let a = 1, b = 2, c = 3
+in a * b * c
+```
+
+## Parsing
+
+The parser uses [Megaparsec](https://hackage.haskell.org/package/megaparsec) and [`makeExprParser`](https://hackage.haskell.org/package/parser-combinators-1.3.0/docs/Control-Monad-Combinators-Expr.html#v:makeExprParser) from `parser-combinators`.
+
+Here's a simplified call graph of the parsing code, showing its structure:
+
+![SVG showing parsing graph](parsegraph.svg)
+
+## Typechecking
 
 The list of Doldrums types is short: `Bool`, `Int`, `Double`, `String`, `Constructor`, `TypeVariable`, and `:->` (the function type).
 
@@ -106,43 +127,32 @@ The opposite is true for lambda expressions: they parse and typecheck just fine,
 main = (\x y. x) 3 4;
 ```
 
-### Let expressions
-
-You can define variables to be used in an expression with `let`...`in`
-```
-let n = 0 in n
-```
-
-Multiple definitions should be separated by commas
-```
-let a = 1, b = 2, c = 3
-in a * b * c
-```
-
 ### Operator Precedence
 
 Higher numbers mean higher precedence. All operators are binary (they have both a left and a right hand side).
 
 Precedence | Associativity | Operator
 -----------|---------------|---------
-6          | left          | _function application_
-5          | right         | *
-5          |               | *.
-5          |               | /
-5          |               | /.
-4          | right         | +
-4          |               | +.
-4          |               | -
-4          |               | -.
-3          |               | ==
-3          |               | !=
-3          |               | >
-3          |               | >=
-3          |               | <
-3          |               | <=
-2          | right         | &&
-1          | right         | \|\|
-0          | right         | $
+7          | left          | _function application_
+6          | -             | `~`
+6          | -             | `!`
+5          | right         | `*`
+5          | right         | `*.`
+5          | right         | `/`
+5          | right         | `/.`
+4          | right         | `+`
+4          | right         | `+.`
+4          | right         | `-`
+4          | right         | `-.`
+3          | right         | `==`
+3          | right         | `!=`
+3          | right         | `>`
+3          | right         | `>=`
+3          | right         | `<`
+3          | right         | `<=`
+2          | right         | `&&`
+1          | right         | `\|\|`
+0          | right         | `$`
 
 ## How can I do this?
 
