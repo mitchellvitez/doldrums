@@ -1,0 +1,45 @@
+digraph G {
+  node [shape=box]
+
+  Program -> TopLevelDefinition
+
+  TopLevelDefinition -> Name
+  TopLevelDefinition -> Annotated
+
+  Annotated -> Expr
+
+  Expr -> Let
+  Expr -> Lambda
+  Expr -> Operator
+
+  Operator -> BinaryOp
+  Operator -> PrefixOp
+  Operator -> Application
+
+  Literal -> Int
+  Literal -> Bool
+  Literal -> String
+  Literal -> Double
+
+  Let -> Definition
+  Let -> Expr
+
+  Definition -> Name
+  Definition -> Expr
+
+  Lambda -> Name
+  Lambda -> Expr
+
+  Application -> Atomic
+
+  Atomic -> Variable
+  Atomic -> Literal
+  Atomic -> Constructor
+  Atomic -> Parenthesized
+
+  Variable -> Name
+
+  Parenthesized -> Expr
+
+  Name -> NameChar
+}

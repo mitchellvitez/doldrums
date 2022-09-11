@@ -198,7 +198,8 @@ typeInference program =
 -- TODO: add type inference for recursive/mutually recursive functions so fewer of these are necessary
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
-  [ ("+", TypeVariable "prim1" :-> TypeVariable "prim1" :-> TypeVariable "prim1")
+  [ ("+", Int :-> Int :-> Int )
+  , ("+.", Double :-> Double :-> Double )
   , ("$", TypeVariable "prim2" :-> TypeVariable "prim3" :-> TypeVariable "prim4")
   , ("if", Bool :-> TypeVariable "prim5" :-> TypeVariable "prim6")
   , ("==", TypeVariable "prim7" :-> TypeVariable "prim8" :-> Bool)
@@ -207,7 +208,8 @@ primitiveTypes = Map.fromList
   , ("||", Bool :-> Bool :-> Bool)
   , ("<", TypeVariable "prim10" :-> TypeVariable "prim10" :-> Bool)
   , ("/", TypeVariable "prim11" :-> TypeVariable "prim11" :-> TypeVariable "prim11")
-  , ("*", TypeVariable "prim12" :-> TypeVariable "prim12" :-> TypeVariable "prim12")
   , ("K", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim13")
-  , ("K1", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim14")
+  , ("K1", TypeVariable "prim15" :-> TypeVariable "prim16" :-> TypeVariable "prim16")
+  , ("~", TypeVariable "prim17" :-> TypeVariable "prim17")
+  , ("*", Int :-> Int :-> Int)
   ]

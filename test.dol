@@ -1,17 +1,20 @@
 three = if (2 == 3 || 3 < 4) 3 7;
 four = ((1 + 6 - 2) * 4) / 5;
+f x = x + 1;
 
-pair x y f = f x y;
-fst p = p K;
-snd p = p K1;
+main = 6.8234 +. 5.23;
 
-f x y =
-  let b = pair y (pair 7 8)
-    , a = pair x b
-  in
-    fst $ snd $ snd a;
+/* pair x y f = f x y; */
+/* fst p = p K; */
+/* snd p = p K1; */
 
-main = f three four;
+/* f x y = */
+/*   let b = pair y (pair 7 8) */
+/*     , a = pair x b */
+/*   in */
+/*     fst $ snd $ snd a; */
+
+/* main = f three four; */
 
 -- self-recursion works if we add the type for `fib : Int -> Int` in `primitiveTypes`
 -- (the typechecking isn't powerful enough to do this by itself yet)
