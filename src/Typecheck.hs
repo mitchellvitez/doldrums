@@ -192,14 +192,22 @@ infer env expr = do
   pure $ apply subs type_
 
 typeInference :: Expr -> IO (Either Text Type, TypeInstantiationState)
-typeInference program = runTypeInstantiation $ infer primitiveTypes program
+typeInference program =
+  runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes) program
 
-primitiveTypes :: Map Name Scheme
+-- TODO: add type inference for recursive/mutually recursive functions so fewer of these are necessary
+primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
-  [ ("+", Scheme [] (TypeVariable "x1" :-> TypeVariable "x1" :-> TypeVariable "x1"))
-  , ("$", Scheme [] (TypeVariable "x2" :-> TypeVariable "x3" :-> TypeVariable "x4"))
-  , ("if", Scheme [] (Bool :-> TypeVariable "x5" :-> TypeVariable "x6"))
-  , ("==", Scheme [] (TypeVariable "x7" :-> TypeVariable "x8" :-> Bool))
-  , ("-", Scheme [] (TypeVariable "x9" :-> TypeVariable "x9" :-> TypeVariable "x9"))
-  , ("fib", Scheme [] (Int :-> Int))
+  [ ("+", TypeVariable "prim1" :-> TypeVariable "prim1" :-> TypeVariable "prim1")
+  , ("$", TypeVariable "prim2" :-> TypeVariable "prim3" :-> TypeVariable "prim4")
+  , ("if", Bool :-> TypeVariable "prim5" :-> TypeVariable "prim6")
+  , ("==", TypeVariable "prim7" :-> TypeVariable "prim8" :-> Bool)
+  , ("-", TypeVariable "prim9" :-> TypeVariable "prim9" :-> TypeVariable "prim9")
+  , ("fib", Int :-> Int)
+  , ("||", Bool :-> Bool :-> Bool)
+  , ("<", TypeVariable "prim10" :-> TypeVariable "prim10" :-> Bool)
+  , ("/", TypeVariable "prim11" :-> TypeVariable "prim11" :-> TypeVariable "prim11")
+  , ("*", TypeVariable "prim12" :-> TypeVariable "prim12" :-> TypeVariable "prim12")
+  , ("K", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim13")
+  , ("K1", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim14")
   ]

@@ -14,7 +14,7 @@ The compiler is written in Haskell. Run `stack run test.dol` to see an example.
 
 I wrote the parsing using [Megaparsec](https://hackage.haskell.org/package/megaparsec).
 
-The `run` function performs each stage of the compilation pipeline. In order, it parses a small prelude (written in Doldrums), reads an input file, parses, evaluates, and shows the program results.
+The `run` function performs each stage of the compilation pipeline. In order, it parses a small prelude (written in Doldrums), reads an input file, parses, typechecks, evaluates, and shows the program results.
 
 ## The Doldrums language
 
@@ -66,10 +66,13 @@ main = f $ g $ h x;
 
 ### Typechecking
 
-Doldrums has a very simple typechecking mechanism, to ensure that certain kinds of invalid programs aren't allowed. For example, this program will fail to typecheck:
+The list of Doldrums types is short: `Bool`, `Int`, `Double`, `String`, `Constructor`, `TypeVariable`, and `:->` (the function type).
+
+Doldrums uses Hindley-Milner style type inference to ensure that certain kinds of invalid programs aren't allowed. For example, this program will fail to typecheck:
 
 ```
-main = 7 + "hello";
+func x = x + 7;
+main = func "hello";
 ```
 
 So will this one, since you can't apply literals:
@@ -78,14 +81,30 @@ So will this one, since you can't apply literals:
 main = 1 2 3;
 ```
 
-However, the mechanism currently only infers types within combinators, not across them. See this program for an example:
+The typechecking mechanism doesn't currently support recursion (however, the evaluator does). It's possible to work around these kinds of type errors by e.g. adding `fib : Int -> Int` to the listing of `primitiveTypes`.
 
 ```
-func x = x + 7;
-main = func "hello";
+fib n =
+  if (n == 0) 1 $
+  if (n == 1) 1 $
+  fib (n - 1) + fib (n - 2);
+
+main = fib 10;
 ```
 
-The list of types is short: `Bool`, `Int`, `Double`, `String`, and `Constr`. They are inferred purely from the usage of literals and the combinations of those usages.
+This principle also blocks mutual recursion from typechecking.
+
+```
+g = f;
+f = g;
+main = f;
+```
+
+The opposite is true for lambda expressions: they parse and typecheck just fine, but the evaluator can't currently instantiate them.
+
+```
+main = (\x y. x) 3 4;
+```
 
 ### Let expressions
 
@@ -98,15 +117,6 @@ Multiple definitions should be separated by commas
 ```
 let a = 1, b = 2, c = 3
 in a * b * c
-```
-
-Because Doldrums is lazy, you can define your variables in any order
-```
-let x = z
-  , y = 7
-  , z = y
-in
-  x
 ```
 
 ### Operator Precedence
@@ -136,4 +146,4 @@ Precedence | Associativity | Operator
 
 ## How can I do this?
 
-I'd recommend using Megaparsec or another parsing library to make that part easier to write. I got the Template Instantiation material (`src/Template.hs`) from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add typechecking. Some issues were debugged more quickly thanks to help from friends.
+I'd recommend using Megaparsec or another parsing library to make that part easier to write. I got the Template Instantiation material (`src/Template.hs`) from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add the initial typechecking. Some issues were debugged more quickly thanks to help from friends. [Algorithm W Step by Step](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.65.7733&rep=rep1&type=pdf) helped me upgrade the typechecking to Hindley-Milner style inference.
