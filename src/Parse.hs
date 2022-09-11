@@ -22,10 +22,10 @@ type Parser = Parsec Void Text
 parseProgram :: Parser Program
 parseProgram = do
   spaceConsumer
-  some parseSupercombinator
+  some parseTopLevelDefn
 
-parseSupercombinator :: Parser SupercombinatorDefinition
-parseSupercombinator = do
+parseTopLevelDefn :: Parser TopLevelDefn
+parseTopLevelDefn = do
   name <- parseName
   vars <- many parseName
   lexeme $ char '='
@@ -37,7 +37,7 @@ parseAnnotatedExpr :: Parser (Annotated Expr)
 parseAnnotatedExpr = do
   expr <- parseExpr
   sourcePos <- getSourcePos
-  pure $ Annotated expr $ Annotation sourcePos
+  pure $ Annotated sourcePos expr
 
 parseExpr :: Parser Expr
 parseExpr =
@@ -152,10 +152,10 @@ parseExprParenthesized = do
 
 parseExprLiteral :: Parser Expr
 parseExprLiteral =
-  ExprLiteral . ValueInt  . toInteger <$> parseInt <|>
-  ExprLiteral . ValueDouble <$> parseDouble <|>
-  ExprLiteral . ValueBool   <$> parseBool   <|>
-  ExprLiteral . ValueString <$> parseString
+  ExprInt . toInteger <$> parseInt <|>
+  ExprDouble <$> parseDouble <|>
+  ExprBool  <$> parseBool <|>
+  ExprString <$> parseString
 
 parseExprVariable :: Parser Expr
 parseExprVariable = ExprVariable <$> parseName
@@ -201,7 +201,7 @@ parseExprApplication = do
 makeApplicationChain :: [Expr] -> Expr
 makeApplicationChain exprs = Prelude.foldl ExprApplication (Prelude.head exprs) (Prelude.tail exprs)
 
-parseInt :: Parser Int
+parseInt :: Integral i => Parser i
 parseInt = lexeme L.decimal
 
 parseDouble :: Parser Double

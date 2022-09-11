@@ -42,12 +42,13 @@ type Primitive = TiState -> TiState
 instance Show Primitive where
   show _ = "<<primitive>>"
 
-type Tag = Int
-
 data Node
   = NAp Addr Addr
   | NSupercomb Text [Text] Expr
-  | NLit Value
+  | NIntLit Integer
+  | NBoolLit Bool
+  | NStringLit Text
+  | NDoubleLit Double
   | NInd Addr
   | NPrim Name Primitive
   | NData Tag [Addr]
@@ -66,15 +67,15 @@ compile prelude program = (initialStack, initialTiDump, initialHeap, globals, ti
     addressOfMain = assocLookup "main" globals "main is not defined"
     scDefs = program ++ prelude
 
-buildInitialHeap :: [SupercombinatorDefinition] -> (TiHeap, TiGlobals)
+buildInitialHeap :: Program -> (TiHeap, TiGlobals)
 buildInitialHeap scDefs =
   (heap2, scAddrs ++ primAddrs)
   where
     (heap1, scAddrs) = mapAccumL allocateSc hInitial scDefs
     (heap2, primAddrs) = mapAccumL allocatePrim heap1 primitives
 
-allocateSc :: TiHeap -> SupercombinatorDefinition -> (TiHeap, (Name, Addr))
-allocateSc heap (name, args, Annotated body _) = (heap', (name, addr))
+allocateSc :: TiHeap -> TopLevelDefn -> (TiHeap, (Name, Addr))
+allocateSc heap (name, args, Annotated _ body) = (heap', (name, addr))
   where
     (heap', addr) = hAlloc heap (NSupercomb name args body)
 
@@ -99,7 +100,10 @@ tiFinal ([], _, _, _, _) = error "Empty stack"
 tiFinal _ = False
 
 isDataNode :: Node -> Bool
-isDataNode (NLit _)    = True
+isDataNode (NIntLit _)    = True
+isDataNode (NBoolLit _)    = True
+isDataNode (NStringLit _)    = True
+isDataNode (NDoubleLit _)    = True
 isDataNode (NData t c) = True
 isDataNode _           = False
 
@@ -107,14 +111,17 @@ step :: TiState -> TiState
 step state@(stack, _, heap, _, _) =
   dispatch (hLookup heap (head stack))
   where
-    dispatch (NLit n)                 = literalStep state n
+    dispatch (NIntLit n)               = literalStep state n
+    dispatch (NBoolLit n)              = literalStep state n
+    dispatch (NStringLit n)            = literalStep state n
+    dispatch (NDoubleLit n)            = literalStep state n
     dispatch (NAp a1 a2)               = apStep state a1 a2
     dispatch (NSupercomb sc args body) = scStep state sc args body
     dispatch (NInd addr)               = indStep state addr
     dispatch (NPrim name prim)         = primStep state prim
     dispatch (NData tag compts)        = dataStep state tag compts
 
-literalStep :: TiState -> Value -> TiState
+literalStep :: TiState -> a -> TiState
 literalStep (stack, stack2:dump, heap, globals, stats) n =
   (stack2, dump, heap, globals, stats)
 
@@ -154,7 +161,10 @@ getArgs heap (_ : stack) = map getArg stack
 getArgs _ [] = []
 
 instantiate :: Expr -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
-instantiate (ExprLiteral v) heap _ = hAlloc heap (NLit v)
+instantiate (ExprInt v) heap _ = hAlloc heap (NIntLit v)
+instantiate (ExprBool v) heap _ = hAlloc heap (NBoolLit v)
+instantiate (ExprString v) heap _ = hAlloc heap (NStringLit v)
+instantiate (ExprDouble v) heap _ = hAlloc heap (NDoubleLit v)
 instantiate (ExprApplication e1 e2) heap env = hAlloc heap2 (NAp a1 a2)
   where
     (heap1, a1) = instantiate e1 heap  env
@@ -171,8 +181,14 @@ instantiate (ExprLet defs body) heap oldEnv =
 instantiate (ExprLambda _ _ ) _ _ = error "Can't instantiate lambda exprs"
 
 instantiateAndUpdate :: Expr -> Addr -> TiHeap -> Assoc Text Addr -> TiHeap
-instantiateAndUpdate (ExprLiteral v) updateAddr heap env =
-  hUpdate heap updateAddr (NLit v)
+instantiateAndUpdate (ExprInt v) updateAddr heap env =
+  hUpdate heap updateAddr (NIntLit v)
+instantiateAndUpdate (ExprBool v) updateAddr heap env =
+  hUpdate heap updateAddr (NBoolLit v)
+instantiateAndUpdate (ExprString v) updateAddr heap env =
+  hUpdate heap updateAddr (NStringLit v)
+instantiateAndUpdate (ExprDouble v) updateAddr heap env =
+  hUpdate heap updateAddr (NDoubleLit v)
 instantiateAndUpdate (ExprApplication a b) updateAddr heap env =
   hUpdate heap2 updateAddr (NAp x y)
   where
@@ -242,7 +258,10 @@ tshow = pack . show
 showNode :: Node -> Text
 showNode (NAp a1 a2) = Text.concat ["NAp ", showAddr a1, " ", showAddr a2]
 showNode (NSupercomb name _ _) = "NSupercomb " <> name
-showNode (NLit n) = "NLit " <> tshow n
+showNode (NIntLit n) = "NIntLit " <> tshow n
+showNode (NBoolLit n) = "NBoolLit " <> tshow n
+showNode (NStringLit n) = "NStringLit " <> tshow n
+showNode (NDoubleLit n) = "NDoubleLit " <> tshow n
 showNode (NInd addr) = "NInd " <> tshow addr
 showNode (NPrim name prim) = "NPrim " <> name
 showNode (NData tag compts) = "NData " <> tshow tag <> " [" <> Text.intercalate "," (map showAddr compts) <> "]"
@@ -251,11 +270,10 @@ showFinalNode :: Node -> Text
 showFinalNode (NAp a1 a2) = Text.concat ["<application:", showAddr a1, ",", showAddr a2, ">"]
 showFinalNode (NSupercomb name _ _) = "<combinator:" <> name <> ">"
 showFinalNode (NInd addr) = "<indirection:" <> tshow addr <> ">"
-showFinalNode (NLit n) = case n of
-  ValueInt x -> tshow x
-  ValueDouble x -> tshow x
-  ValueBool x -> tshow x
-  ValueString x -> tshow x
+showFinalNode (NIntLit n) = tshow n
+showFinalNode (NBoolLit n) = tshow n
+showFinalNode (NStringLit n) = tshow n
+showFinalNode (NDoubleLit n) = tshow n
 showFinalNode (NPrim name prim) = "<primitive:(" <> name <> ")>"
 showFinalNode node@(NData tag compts) = "<data:{" <> tshow tag <> "," <> Text.intercalate "\n" (map tshow compts) <> "}>"
 
@@ -332,20 +350,20 @@ primitives =
   , ("caseList", primCaseList)
   , ("abort", error "encountered abort primitive")
   ]
-  where negateNode (NLit (ValueInt x)) = NLit (ValueInt (negate x))
-        negateNode (NLit (ValueDouble x)) = NLit (ValueDouble (negate x))
+  where negateNode (NIntLit x) = NIntLit (negate x)
+        negateNode (NDoubleLit x) = NDoubleLit (negate x)
         negateNode _ = error "bad value for negateNode"
-        notNode (NLit (ValueBool x)) = NLit (ValueBool (not x))
+        notNode (NBoolLit x) = NBoolLit (not x)
         notNode _ = error "bad value for notNode"
 
 primArith :: (Integer -> Integer -> Integer) -> TiState -> TiState
 primArith op state = primDyadic op' state
-  where op' (NLit (ValueInt n)) (NLit (ValueInt m)) = NLit (ValueInt (op n m))
+  where op' (NIntLit n) (NIntLit m) = NIntLit (op n m)
         op' _ _ = error "bad type passed to arithmetic operator"
 
 primArithFloat :: (Double -> Double -> Double) -> TiState -> TiState
 primArithFloat op state = primDyadic op' state
-  where op' (NLit (ValueDouble n)) (NLit (ValueDouble m)) = NLit (ValueDouble (op n m))
+  where op' (NDoubleLit n) (NDoubleLit m) = NDoubleLit (op n m)
         op' _ _ = error "bad type passed to arithmetic operator"
 
 doldrumsTrue = NData 2 []
@@ -360,9 +378,12 @@ fromDoldrumsBool x = case x of
   NData 1 [] -> False
   _ -> error "tried to evaluate a non-bool as a bool"
 
-primComp :: (Value -> Value -> Bool) -> TiState -> TiState
+primComp :: (Expr -> Expr -> Bool) -> TiState -> TiState
 primComp op state = primDyadic op' state
-  where op' (NLit n) (NLit m) = toDoldrumsBool $ op n m
+  where op' (NIntLit n) (NIntLit m) = toDoldrumsBool $ op (ExprInt n) (ExprInt m)
+        op' (NBoolLit n) (NBoolLit m) = toDoldrumsBool $ op (ExprBool n) (ExprBool m)
+        op' (NStringLit n) (NStringLit m) = toDoldrumsBool $ op (ExprString n) (ExprString m)
+        op' (NDoubleLit n) (NDoubleLit m) = toDoldrumsBool $ op (ExprDouble n) (ExprDouble m)
         op' _ _ = error "bad type passed to arithmetic operator"
 
 primBool :: (Bool -> Bool -> Bool) -> TiState -> TiState

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c98258d23e26b69a2eda3f4d12dcc6c0f85ea69f7c058abf9d426ed415ab9430
+-- hash: 7f4a6064e566d105085deb2ef715e4544816203cf982c8cd1ae11cd070cba271
 
 name:           doldrums
 version:        0.1.0.0
@@ -52,6 +52,7 @@ library
     , hspec >=2.7 && <3
     , megaparsec >=8.0 && <9
     , text >=1.2 && <2
+    , transformers >=0.5 && <1
   default-language: Haskell2010
 
 executable doldrums-exe
@@ -79,6 +80,7 @@ executable doldrums-exe
     , hspec >=2.7 && <3
     , megaparsec >=8.0 && <9
     , text >=1.2 && <2
+    , transformers >=0.5 && <1
   default-language: Haskell2010
 
 test-suite doldrums-test
@@ -107,4 +109,5 @@ test-suite doldrums-test
     , hspec >=2.7 && <3
     , megaparsec >=8.0 && <9
     , text >=1.2 && <2
+    , transformers >=0.5 && <1
   default-language: Haskell2010
