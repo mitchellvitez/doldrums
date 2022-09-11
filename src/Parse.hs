@@ -92,7 +92,7 @@ opTable =
   ]
 
 binaryOp :: Text -> Operator Parser Expr
-binaryOp name = InfixL $ binaryOpAST name <$ (lexeme . try) (string name)
+binaryOp name = InfixR $ binaryOpAST name <$ (lexeme . try) (string name)
 
 binaryOpAST :: Text -> Expr -> Expr -> Expr
 binaryOpAST name expr1 expr2 =
