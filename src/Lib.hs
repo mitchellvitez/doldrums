@@ -60,13 +60,14 @@ lookupMain ((name, _, Annotated _ body):rest)
   | otherwise = lookupMain rest
 
 toLambda :: TopLevelDefn -> (Name, Expr)
-toLambda (name, vars, Annotated _ expr) = (name, ExprLambda vars expr)
+toLambda (name, vars, Annotated _ expr) =
+  (name, Prelude.foldr ExprLambda expr vars)
 
 normalizeAST :: Program -> Expr
-normalizeAST program = ExprLet (map toLambda $ withoutMain program) (lookupMain program)
+normalizeAST program = foldr (\(name, expr) -> ExprLet name expr) (lookupMain program) lambdas
   where
-    withoutMain :: Program -> Program
     withoutMain = filter ((\(name, _, _) -> name /= "main"))
+    lambdas = map toLambda $ withoutMain program
 
 runBase :: Text -> (Text -> IO a) -> Bool -> IO a
 runBase programText strat isDebug = do
@@ -93,15 +94,11 @@ runBase programText strat isDebug = do
               -- putStrLn $ replicate (unPos line - 1) '-' <> "^"
               tprint msg
               exitFailure
-          let
-            initialTypeJudgmentState = TypeJudgmentState
-                { nextTypeVarId = 0
-                , bindings = Map.empty
-                }
-          types <- evaluate (force . infer . fst $ runState (toTypedAST program) initialTypeJudgmentState) `catch` typecheckingFailureHandler
+          -- TODO: bring back types
+          -- types <- evaluate (force . infer . fst $ runState (toTypedAST program) initialTypeJudgmentState) `catch` typecheckingFailureHandler
           -- debug isDebug "TYPES" $ mapM_ (\(name, ty) -> putStrLn $ unpack name <> " : " <> show ty) types
-          debug isDebug "TYPED AST" $ print types
-          debug isDebug "TYPE JUDGMENTS" $ mapM_ putStrLn $ judgments types
+          -- debug isDebug "TYPED AST" $ print types
+          -- debug isDebug "TYPE JUDGMENTS" $ mapM_ putStrLn $ judgments types
 
           -- TODO: replace the below with LLVM
 

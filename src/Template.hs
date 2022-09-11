@@ -171,10 +171,10 @@ instantiate (ExprApplication e1 e2) heap env = hAlloc heap2 (NAp a1 a2)
     (heap2, a2) = instantiate e2 heap1 env
 instantiate (ExprVariable v) heap env = (heap, assocLookup v env ("Undefined name " <> v))
 instantiate (ExprConstructor tag arity) heap env = instantiateConstr tag arity heap env
-instantiate (ExprLet defs body) heap oldEnv =
+instantiate (ExprLet name expr body) heap oldEnv =
   instantiate body heap1 newEnv
   where
-    (heap1, extraBindings) = mapAccumL instantiateRhs heap defs
+    (heap1, extraBindings) = mapAccumL instantiateRhs heap [(name, expr)]
     newEnv = oldEnv ++ extraBindings
     instantiateRhs heap3 (name, rhs) = (heap2, (name, addr))
       where (heap2, addr) = instantiate rhs heap3 newEnv
@@ -198,10 +198,10 @@ instantiateAndUpdate (ExprVariable v) updateAddr heap env =
   hUpdate heap updateAddr (NInd varAddr)
   where
     varAddr = assocLookup v env ("Undefined name " <> v)
-instantiateAndUpdate (ExprLet defs body) updateAddr heap oldEnv =
+instantiateAndUpdate (ExprLet name expr body) updateAddr heap oldEnv =
   instantiateAndUpdate body updateAddr heap1 newEnv
   where
-    (heap1, extraBindings) = mapAccumL instantiateRhs heap defs
+    (heap1, extraBindings) = mapAccumL instantiateRhs heap [(name, expr)]
     newEnv = extraBindings ++ oldEnv
     instantiateRhs heap (name, rhs) =
       (heap1, (name, addr))

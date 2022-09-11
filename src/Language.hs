@@ -28,6 +28,6 @@ data Expr
   | ExprDouble Double
   | ExprConstructor Tag Arity
   | ExprApplication Expr Expr
-  | ExprLet [(Name, Expr)] Expr -- definitions, body
-  | ExprLambda [Name] Expr
+  | ExprLet Name Expr Expr -- definitions, body
+  | ExprLambda Name Expr
   deriving (Show, Eq, Ord, Generic, NFData)

@@ -176,7 +176,7 @@ parseExprLet = do
   definitions <- parseDefinition `sepBy1` lexeme (char ',')
   lexeme $ string "in"
   body <- parseExpr
-  pure $ ExprLet definitions body
+  pure $ Prelude.foldr (\(name, expr) -> ExprLet name expr) body definitions
 
 parseDefinition :: Parser (Name, Expr)
 parseDefinition = do
@@ -191,7 +191,7 @@ parseExprLambda = do
   abstractions <- some parseName
   lexeme $ char '.'
   body <- parseExpr
-  pure $ ExprLambda abstractions body
+  pure $ Prelude.foldr ExprLambda body abstractions
 
 parseExprApplication :: Parser Expr
 parseExprApplication = do
