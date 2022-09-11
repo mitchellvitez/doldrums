@@ -5,13 +5,17 @@ module Typecheck where
 
 import Language
 
-import Control.Monad.Trans.State.Lazy
+import Control.Monad.State
+import Control.Monad.Except
+import Control.Monad.Reader
 import Control.DeepSeq (NFData)
 import Control.Exception
 import GHC.Generics
 import Data.Foldable (fold)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Kind hiding (Type)
 import Data.Text (Text, unpack, pack)
 import Data.Void
@@ -22,164 +26,180 @@ data Type
   | Int
   | Double
   | String
-  | Constr
+  | Constructor
   | Type :-> Type
-  | TypeVar TypeVariable
+  | TypeVariable Name
   deriving (Eq, Show, Generic, NFData)
 
 infixr 6 :->
 
-type TypeVarId = Int
+-- most of this implementation is from the paper 'Algorithm W Step by Step' by Martin Grabmüller
+class Types a where
+  freeTypeVariable :: a -> Set Name
+  apply :: Substitution -> a -> a
 
-data TypeVariable
-  = Bound Type
-  | Unbound TypeVarId
-  deriving (Eq, Show, Generic, NFData)
+-- used for finding type variable replacements / generalization
+data Scheme = Scheme [Name] Type
+
+instance Types Scheme where
+  freeTypeVariable (Scheme vars t) = freeTypeVariable t Set.\\ Set.fromList vars
+  apply subs (Scheme vars t) = Scheme vars $ apply (foldr Map.delete subs vars) t
+
+-- map from variables to their types, for substituting
+type Substitution = Map Name Type
+
+tshow :: Show a => a -> Text
+tshow = pack . show
+
+emptySubstitution :: Substitution
+emptySubstitution = Map.empty
+
+combineSubstitutions :: Substitution -> Substitution -> Substitution
+combineSubstitutions a b = Map.map (apply a) b `Map.union` a
+
+-- environment of names and the schemes they correspond to
+newtype TypeEnv = TypeEnv (Map Name Scheme)
+
+remove :: TypeEnv -> Name -> TypeEnv
+remove (TypeEnv env) var = TypeEnv $ Map.delete var env
+
+generalize :: TypeEnv -> Type -> Scheme
+generalize env t = Scheme vars t
+  where vars = Set.toList $ freeTypeVariable t Set.\\ freeTypeVariable env
+
+instance Types TypeEnv where
+  freeTypeVariable (TypeEnv env) = freeTypeVariable $ Map.elems env
+  apply subs (TypeEnv env) = TypeEnv $ Map.map (apply subs) env
+
+instance Types Type where
+  freeTypeVariable (TypeVariable name) = Set.singleton name
+  freeTypeVariable Int = Set.empty
+  freeTypeVariable Bool = Set.empty
+  freeTypeVariable String = Set.empty
+  freeTypeVariable Double = Set.empty
+  freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
+
+  apply subs (TypeVariable name) = case Map.lookup name subs of
+    Nothing -> TypeVariable name
+    Just t -> t
+  apply subs (a :-> b) = apply subs a :-> apply subs b
+  apply subs t = t
+
+instance Types a => Types [a] where
+  freeTypeVariable list = foldr Set.union Set.empty $ map freeTypeVariable list
+  apply subs = map $ apply subs
 
 data TypeCheckingException = TypeCheckingException Text
   deriving (Eq, Show)
 instance Exception TypeCheckingException
 
--- data TExpr
---   = TExprVariable Type Name
---   | TExprInt Type Integer
---   | TExprBool Type Bool
---   | TExprDouble Type Double
---   | TExprString Type Text
---   | TExprConstructor Type Tag Arity
---   | TExprApplication Type TExpr TExpr
---   | TExprLet Type [(Name, TExpr)] TExpr
---   | TExprLambda Type [Name] TExpr
---   deriving (Show, Eq, Generic, NFData)
+data TypeInstantiationEnv = TypeInstantiationEnv
 
--- getType :: TExpr -> Type
--- getType = \case
---   TExprVariable t _ -> t
---   TExprInt t _ -> t
---   TExprBool t _ -> t
---   TExprDouble t _ -> t
---   TExprString t _ -> t
---   TExprConstructor t _ _ -> t
---   TExprApplication t _ _ -> t
---   TExprLet t _ _ -> t
---   TExprLambda t _ _ -> t
+data TypeInstantiationState = TypeInstantiationState
+  { typeInstantiationSupply :: Int
+  , typeInstantiationSubstitution :: Substitution
+  }
+  deriving Show
 
--- infer :: TExpr -> TExpr
--- infer = id
+-- our Type Instantiation monad stack
+type TypeInstantiation a =
+  ExceptT Text (ReaderT TypeInstantiationEnv (StateT TypeInstantiationState IO)) a
 
--- pretty print all type judgments for this AST
--- judgments :: TExpr -> [String]
--- judgments (TExprVariable t name) = [unpack name <> " : " <> show t]
--- judgments (TExprInt t n) = [show n <> " : " <> show t]
--- judgments (TExprBool t b) = [show b <> " : " <> show t]
--- judgments (TExprDouble t d) = [show d <> " : " <> show t]
--- judgments (TExprString t s) = [show s <> " : " <> show t]
--- judgments (TExprConstructor t tag arity) = ["Constr{" <> show tag <> "," <> show arity <> "}" <> " : " <> show t]
--- judgments (TExprApplication t e1 e2) = ["app" <> " : " <> show t] <> judgments e1 <> judgments e2
--- judgments (TExprLet t bindings expr) = ["let" <> " : " <> show t] <> concatMap (\(name, expr) -> judgments expr) bindings <> judgments expr
--- judgments (TExprLambda t names expr) = ["lam" <> " : " <> show t] <> judgments expr
+runTypeInstantiation :: TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
+runTypeInstantiation t = do
+  runStateT (runReaderT (runExceptT t) initialTypeInstantiationEnv) initialTypeInstantiationState
+  where
+    initialTypeInstantiationEnv = TypeInstantiationEnv
+    initialTypeInstantiationState = TypeInstantiationState
+      { typeInstantiationSupply = 0
+      , typeInstantiationSubstitution = Map.empty
+      }
 
--- data TypeJudgmentState = TypeJudgmentState
---   { nextTypeVarId :: TypeVarId
---   , bindings :: Map Name Type
---   }
+newTypeVar :: Text -> TypeInstantiation Type
+newTypeVar prefix = do
+  state <- get
+  put state { typeInstantiationSupply = typeInstantiationSupply state + 1 }
+  pure $ TypeVariable $ prefix <> (tshow $ typeInstantiationSupply state)
 
--- isUnboundVar :: Type -> Bool
--- isUnboundVar (TypeVar (Unbound _)) = True
--- isUnboundVar _ = False
+instantiate :: Scheme -> TypeInstantiation Type
+instantiate (Scheme vars t) = do
+  newVars <- mapM (const $ newTypeVar "a") vars
+  let subs = Map.fromList $ zip vars newVars
+  pure $ apply subs t
 
--- toTypedAST :: Expr -> State TypeJudgmentState TExpr
--- -- toTypedAST (ExprVariable "+") = pure $ TExprVariable (Int :-> Int :-> Int) "+"
--- toTypedAST (ExprVariable name) = do
---   state <- get
---   case Map.lookup name (bindings state) of
---     Just ty ->
---       pure $ TExprVariable (TypeVar $ Bound ty) name
---     Nothing -> do
---       put $ state { nextTypeVarId = nextTypeVarId state + 1}
---       pure $ TExprVariable (TypeVar . Unbound $ nextTypeVarId state) name
--- toTypedAST (ExprInt n)      = pure $ TExprInt      Int     n
--- toTypedAST (ExprBool b)     = pure $ TExprBool     Bool    b
--- toTypedAST (ExprString s)   = pure $ TExprString   String  s
--- toTypedAST (ExprDouble d)   = pure $ TExprDouble   Double  d
--- toTypedAST (ExprConstructor tag arity) = undefined -- TODO
--- toTypedAST (ExprApplication e1 e2) = do
---   typedE1 <- toTypedAST e1
---   typedE2 <- toTypedAST e2
---   case getType typedE1 of
---     -- (TypeVar (Bound ty)) -> pure $ TExprApplication ty typedE1 typedE2
---     (TypeVar (Unbound x)) -> pure $ TExprApplication (TypeVar (Unbound x)) typedE1 typedE2
---     (a :-> b) -> do
---       if a == getType typedE2 || isUnboundVar a || isUnboundVar (getType typedE2)
---       then pure $ TExprApplication b typedE1 typedE2
---       else throw . TypeCheckingException . pack $ "Type mismatch: " <> show a <> ", " <> show e2
---     x -> throw $ TypeCheckingException $ "Trying to apply something that isn't a function: " <> pack (show x)
--- toTypedAST (ExprLet bindings body) = do
---   typedBody <- toTypedAST body
---   typedBindings <- mapM (\(name, expr) -> do
---     typedExpr <- toTypedAST expr
---     pure (name, typedExpr)) bindings
---   pure $ TExprLet (getType typedBody) typedBindings typedBody
--- toTypedAST (ExprLambda bindings body) = do
---   typedBody <- toTypedAST body
---   pure $ TExprLambda (getType typedBody) bindings typedBody
+unify :: Type -> Type -> TypeInstantiation Substitution
+unify (a1 :-> b1) (a2 :-> b2) = do
+  subs1 <- unify a1 a2
+  subs2 <- unify (apply subs1 b1) (apply subs1 b2)
+  pure $ subs1 `combineSubstitutions` subs2
+unify (TypeVariable u) t = varBind u t
+unify t (TypeVariable u) = varBind u t
+unify Int Int = pure emptySubstitution
+unify Bool Bool = pure emptySubstitution
+unify String String = pure emptySubstitution
+unify Double Double = pure emptySubstitution
+unify a b = throw . TypeCheckingException $ fold
+  [ "Type mismatch: "
+  , tshow a
+  , " does not match "
+  , tshow b
+  ]
 
--- typecheck :: Program -> [(Name, SimpleType)]
--- typecheck program =
---   Map.toList . snd $ runState (typecheckProgram prog) (Map.fromList [])
---   where prog = Map.fromList $ map (\(name, args, body) -> (name, (args, body))) program
+varBind :: Name -> Type -> TypeInstantiation Substitution
+varBind u t
+  | t == TypeVariable u = pure emptySubstitution
+  | u `Set.member` freeTypeVariable t = throw . TypeCheckingException $ fold
+      [ "Occurs check failed: "
+      , u
+      , " does not match "
+      , tshow t
+      ]
+  | otherwise = pure $ Map.singleton u t
 
--- typecheckProgram :: Map Name ([Name], Annotated Expr) -> State (Map Name SimpleType) ()
--- typecheckProgram map = undefined
+typeCheckExpr :: TypeEnv -> Expr -> TypeInstantiation (Substitution, Type)
+typeCheckExpr _ (ExprInt _) = pure (emptySubstitution, Int)
+typeCheckExpr _ (ExprBool _) = pure (emptySubstitution, Bool)
+typeCheckExpr _ (ExprString _) = pure (emptySubstitution, String)
+typeCheckExpr _ (ExprDouble _) = pure (emptySubstitution, Double)
+typeCheckExpr (TypeEnv env) (ExprVariable name) = case Map.lookup name env of
+  Nothing -> throw . TypeCheckingException $ "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
+  Just ty -> do
+    instantiatedType <- instantiate ty
+    pure (emptySubstitution, instantiatedType)
+typeCheckExpr env (ExprLambda name expr) = do
+  typeVar <- newTypeVar "a"
+  let TypeEnv env1 = remove env name
+      env2 = TypeEnv $ env1 `Map.union` Map.singleton name (Scheme [] typeVar)
+  (subs1, type1) <- typeCheckExpr env2 expr
+  pure $ (subs1, apply subs1 typeVar :-> type1)
+typeCheckExpr env (ExprApplication expr1 expr2) = do
+  typeVar <- newTypeVar "a"
+  (subs1, type1) <- typeCheckExpr env expr1
+  (subs2, type2) <- typeCheckExpr (apply subs1 env) expr2
+  subs3 <- unify (apply subs2 type1) (type2 :-> typeVar)
+  pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
+typeCheckExpr env (ExprLet name expr1 expr2) = do
+  (subs1, type1) <- typeCheckExpr env expr1
+  let TypeEnv env1 = remove env name
+      generalizedType = generalize (apply subs1 env) type1
+      env2 = TypeEnv $ Map.insert name generalizedType env1
+  (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
+  pure (subs1 `combineSubstitutions` subs2, type2)
 
--- typecheckArithmeticOperator :: String -> Expr -> Expr -> Expr -> SourcePos -> Annotation -> Typed Expr
--- typecheckArithmeticOperator name e a b pos annotation = case (typecheckExpr [] (Annotated a annotation), typecheckExpr [] (Annotated b annotation)) of
---     (Typed _ Int    , Typed _ Int)     -> Typed e Int
---     (Typed _ Int    , Typed _ Float)   -> Typed e Float
---     (Typed _ Float  , Typed _ Int)     -> Typed e Float
---     (Typed _ Float  , Typed _ Float)   -> Typed e Float
---     (Typed _ (Unknown _), Typed _ Int)     -> Typed e Int
---     (Typed _ Int    , Typed _ (Unknown _)) -> Typed e Int
---     (Typed _ (Unknown a), Typed _ (Unknown b)) -> if a == b then Typed e (Unknown a) else throw $ TypeCheckingException pos $ show a <> " does not match " <> show b
---     (Typed _ (Unknown _), Typed _ Float)   -> Typed e Float
---     (Typed _ Float  , Typed _ (Unknown _)) -> Typed e Float
---     (Typed _ t1     , Typed _ (Unknown _)) -> throw . TypeCheckingException pos $
---       "Invalid first argument type for " <> name <> ": " <> show t1
---     (Typed _ (Unknown _), Typed _ t2)      -> throw . TypeCheckingException pos $
---       "Invalid second argument type for " <> name <> ": " <> show t2
---     (Typed _ t1     , Typed _ t2)      -> throw . TypeCheckingException pos $
---       "Invalid argument types for " <> name <> ": " <> show t1 <> ", " <> show t2
+infer :: Map Name Scheme -> Expr -> TypeInstantiation Type
+infer env expr = do
+  (subs, type_) <- typeCheckExpr (TypeEnv env) expr
+  pure $ apply subs type_
 
--- typecheckExpr :: [Name] -> Annotated Expr -> Typed Expr
--- typecheckExpr (x:xs) annot@(Annotated expr _) = Typed expr ((exprType $ typecheckExpr [] annot) :-> (exprType $ typecheckExpr xs annot))
--- typecheckExpr [] (Annotated expr annotation@(Annotation pos)) = case expr of
---   e@(ExprLiteral (ValueInt n))    -> Typed e Int
---   e@(ExprLiteral (ValueDouble n)) -> Typed e Float
---   e@(ExprLiteral (ValueBool b))   -> Typed e Bool
---   e@(ExprLiteral (ValueString s)) -> Typed e String
+typeInference :: Expr -> IO (Either Text Type, TypeInstantiationState)
+typeInference program = runTypeInstantiation $ infer primitiveTypes program
 
---   e@(ExprApplication (ExprApplication (ExprVariable "+") a) b) -> typecheckArithmeticOperator "+" e a b pos annotation
---   e@(ExprApplication (ExprApplication (ExprVariable "*") a) b) -> typecheckArithmeticOperator "*" e a b pos annotation
---   e@(ExprApplication (ExprApplication (ExprVariable "/") a) b) -> typecheckArithmeticOperator "/" e a b pos annotation
---   e@(ExprApplication (ExprApplication (ExprVariable "-") a) b) -> typecheckArithmeticOperator "-" e a b pos annotation
-
---   -- TODO: if variable in list of known variables, use that type, otherwise assign a new TUnknown type to it
---   e@(ExprVariable name)           -> Typed e (Unknown "a") -- TODO: don't just use `a`
---   e@(ExprConstructor tag arity)   -> Typed e Constr
---   e@(ExprLambda vars body) ->
---     case typecheckExpr [] (Annotated body annotation) of
---       Typed _ t -> Typed e t
---   e@(ExprApplication e1 e2) ->
---     case e1 of
---       ExprLiteral v -> throw $ TypeCheckingException pos $ "Trying to apply a literal: " <> show v
---       ExprConstructor _ _ -> throw $ TypeCheckingException pos "Trying to apply a constructor"
---       _ -> case (typecheckExpr [] (Annotated e1 annotation), typecheckExpr [] (Annotated e2 annotation)) of
---         (Typed _ t1, Typed _ t2) -> case (t1, t2) of
---           (Unknown a, t) -> Typed e t
---           (t, Unknown a) -> Typed e t
---           (a, b) -> if a == b
---             then Typed e a
---             else throw $ TypeCheckingException pos $ show a <> " does not match " <> show b
---   e@(ExprLet bindings body) ->
---     case typecheckExpr [] (Annotated body annotation) of
---       Typed _ t -> Typed e t
+primitiveTypes :: Map Name Scheme
+primitiveTypes = Map.fromList
+  [ ("+", Scheme [] (TypeVariable "x1" :-> TypeVariable "x1" :-> TypeVariable "x1"))
+  , ("$", Scheme [] (TypeVariable "x2" :-> TypeVariable "x3" :-> TypeVariable "x4"))
+  , ("if", Scheme [] (Bool :-> TypeVariable "x5" :-> TypeVariable "x6"))
+  , ("==", Scheme [] (TypeVariable "x7" :-> TypeVariable "x8" :-> Bool))
+  , ("-", Scheme [] (TypeVariable "x9" :-> TypeVariable "x9" :-> TypeVariable "x9"))
+  , ("fib", Scheme [] (Int :-> Int))
+  ]

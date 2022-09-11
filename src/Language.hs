@@ -26,6 +26,7 @@ data Expr
   | ExprBool Bool
   | ExprString Text
   | ExprDouble Double
+  -- TODO: introduce better parsing for constructors
   | ExprConstructor Tag Arity
   | ExprApplication Expr Expr
   | ExprLet Name Expr Expr -- definitions, body

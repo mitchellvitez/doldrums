@@ -20,7 +20,7 @@ import System.Exit (exitFailure)
 import Text.Megaparsec (parse, errorBundlePretty, SourcePos(..))
 import Text.Megaparsec.Pos (sourcePosPretty, unPos)
 import qualified Data.Text as Text
-import Control.Monad.Trans.State.Lazy (runState)
+import Control.Monad.State (runState)
 
 tprint :: Text -> IO ()
 tprint = putStrLn . unpack
@@ -84,21 +84,13 @@ runBase programText strat isDebug = do
           let program = normalizeAST unnormalizedProgram
           debug isDebug "AST" $ print program
 
-          -- need to force evaluation here, so it's strict
-          let
-            -- typecheckingFailureHandler (TypeCheckingException pos@(SourcePos name line column) msg) = do
-            typecheckingFailureHandler (TypeCheckingException msg) = do
-              -- putStrLn $ "Typechecking failure at " <> sourcePosPretty pos
-              -- putStrLn $ replicate (unPos line - 1) '-' <> "v"
-              -- tprint $ Text.lines programText !! (unPos line - 1)
-              -- putStrLn $ replicate (unPos line - 1) '-' <> "^"
-              tprint msg
-              exitFailure
-          -- TODO: bring back types
-          -- types <- evaluate (force . infer . fst $ runState (toTypedAST program) initialTypeJudgmentState) `catch` typecheckingFailureHandler
-          -- debug isDebug "TYPES" $ mapM_ (\(name, ty) -> putStrLn $ unpack name <> " : " <> show ty) types
-          -- debug isDebug "TYPED AST" $ print types
-          -- debug isDebug "TYPE JUDGMENTS" $ mapM_ putStrLn $ judgments types
+          let typecheckingFailureHandler (TypeCheckingException msg) =
+                tprint msg >> exitFailure
+          (types, state) <- typeInference program `catch` typecheckingFailureHandler
+          debug isDebug "TYPE" $ do
+            putStrLn $ "main : " <> (show $ (\(Right x) -> x) types)
+            putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
+            putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
           -- TODO: replace the below with LLVM
 

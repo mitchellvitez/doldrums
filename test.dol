@@ -13,10 +13,14 @@
 
 /* main = f three four; */
 
-/* fib n = */
-/*   if (n == 0) 1 $ */
-/*   if (n == 1) 1 $ */
-/*   fib (n - 1) + fib (n - 2); */
+-- self-recursion works if we add the type for `fib : Int -> Int` in `primitiveTypes`
+-- (the typechecking isn't powerful enough to do this by itself yet)
+fib n =
+  if (n == 0) 1 $
+  if (n == 1) 1 $
+  fib (n - 1) + fib (n - 2);
+
+main = fib 8;
 
 /* these two shouldn't mutually typecheck (Int mismatches String) */
 /* func x = x + 7; */
@@ -24,6 +28,4 @@
 
 /* id x = x; */
 /* const a b = id a; */
-/* main = const 7; */
-
-main = let f = 7, g = 9 in \x y z. f x y z;
+/* main = const 9 8; */

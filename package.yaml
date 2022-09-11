@@ -21,7 +21,7 @@ dependencies:
 - heap         >= 1.0  && < 2
 - constraints  >= 0.12 && < 1
 - deepseq      >= 1.4  && < 2
-- transformers >= 0.5 && < 1
+- mtl          >= 2.2  && < 3
 
 library:
   source-dirs: src
