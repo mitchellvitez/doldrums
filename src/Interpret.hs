@@ -9,7 +9,15 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 interpret :: Expr -> Text
-interpret program = pack . show . fst $ runState (eval program) Map.empty
+interpret program = unpackExpr . fst $ runState (eval program) Map.empty
+
+unpackExpr :: Expr -> Text
+unpackExpr (ExprInt n) = tshow n
+unpackExpr (ExprBool b) = tshow b
+unpackExpr (ExprString s) = tshow s
+unpackExpr (ExprDouble d) = tshow d
+unpackExpr (ExprConstructor tag arity) = "Pack{" <> tshow tag <> ", " <> tshow arity <> "}"
+unpackExpr x = "Incomplete evaluation: " <> tshow x
 
 type Env = Map Name Expr
 
@@ -31,34 +39,43 @@ eval (ExprApplication (ExprApplication (ExprApplication (ExprVariable "if") pred
     ExprBool False -> pure evalB
     _ -> throw . RuntimeException $ "Invalid predicate in an if expression: " <> tshow pred
 
-eval (ExprApplication (ExprApplication (ExprVariable "||") a) b) = do
+eval (ExprApplication (ExprVariable "~") a) = do
   evalA <- eval a
-  evalB <- eval b
-  case (evalA, evalB) of
-    (ExprBool x, ExprBool y) -> pure . ExprBool $ x || y
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (||): " <> tshow x <> ", " <> tshow y
+  case evalA of
+    ExprInt x -> pure . ExprInt $ negate x
+    ExprDouble x -> pure . ExprDouble $ negate x
+    x -> throw . RuntimeException $ "Invalid argument to (~): " <> tshow x
 
-eval (ExprApplication (ExprApplication (ExprVariable "==") a) b) = do
+eval (ExprApplication (ExprVariable "!") a) = do
   evalA <- eval a
-  evalB <- eval b
-  pure . ExprBool $ evalA == evalB
-
-eval (ExprApplication (ExprApplication (ExprVariable "<") a) b) = do
-  evalA <- eval a
-  evalB <- eval b
-  case (evalA, evalB) of
-    (ExprInt x, ExprInt y) -> pure . ExprBool $ x < y
-    (ExprDouble x, ExprDouble y) -> pure . ExprBool $ x < y
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (<): " <> tshow x <> ", " <> tshow y
+  case evalA of
+    ExprBool x -> pure . ExprBool $ not x
+    x -> throw . RuntimeException $ "Invalid argument to (!): " <> tshow x
 
 eval (ExprApplication (ExprApplication (ExprVariable op) a) b) = do
   env <- get
   case Map.lookup op env of
-    Nothing -> evalBinIntOp op a b
+    Nothing -> case op of
+      "+"  -> evalBinIntOp op a b
+      "-"  -> evalBinIntOp op a b
+      "*"  -> evalBinIntOp op a b
+      "/"  -> evalBinIntOp op a b
+      "+." -> evalBinDoubleOp op a b
+      "-." -> evalBinDoubleOp op a b
+      "*." -> evalBinDoubleOp op a b
+      "/." -> evalBinDoubleOp op a b
+      "||" -> evalBinBoolOp op a b
+      "&&" -> evalBinBoolOp op a b
+      "==" -> evalBinCompOp op a b
+      "!=" -> evalBinCompOp op a b
+      ">"  -> evalBinCompOp op a b
+      ">=" -> evalBinCompOp op a b
+      "<"  -> evalBinCompOp op a b
+      "<=" -> evalBinCompOp op a b
+      "$"  -> eval (ExprApplication a b)
     Just expr -> eval $ ExprApplication (ExprApplication expr a) b
 
--- eval :: Expr -> State Env Expr
--- lambda calculus
+-- basic lambda calculus
 eval e@(ExprInt _) = pure e
 eval e@(ExprBool _) = pure e
 eval e@(ExprString _) = pure e
@@ -95,4 +112,48 @@ evalBinIntOp op a b = do
       "/" -> div
   case (evalA, evalB) of
     (ExprInt x, ExprInt y) -> pure . ExprInt $ x `primOp` y
+    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
+
+evalBinDoubleOp :: Name -> Expr -> Expr -> State Env Expr
+evalBinDoubleOp op a b = do
+  evalA <- eval a
+  evalB <- eval b
+  let
+    primOp = case op of
+      "+." -> (+)
+      "-." -> (-)
+      "*." -> (*)
+      "/." -> (/)
+  case (evalA, evalB) of
+    (ExprDouble x, ExprDouble y) -> pure . ExprDouble $ x `primOp` y
+    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
+
+evalBinBoolOp :: Name -> Expr -> Expr -> State Env Expr
+evalBinBoolOp op a b = do
+  evalA <- eval a
+  evalB <- eval b
+  let
+    primOp = case op of
+      "&&" -> (&&)
+      "||" -> (||)
+  case (evalA, evalB) of
+    (ExprBool x, ExprBool y) -> pure . ExprBool $ x `primOp` y
+    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
+
+evalBinCompOp :: Name -> Expr -> Expr -> State Env Expr
+evalBinCompOp op a b = do
+  evalA <- eval a
+  evalB <- eval b
+  let
+    primOp = case op of
+      "==" -> (==)
+      "!=" -> (/=)
+      "<"  -> (<)
+      "<=" -> (<=)
+      ">"  -> (>)
+      ">=" -> (>=)
+  case (evalA, evalB) of
+    (ExprInt x, ExprInt y) -> pure . ExprBool $ x `primOp` y
+    -- TODO
+    -- (ExprDouble x, ExprDouble y) -> pure . ExprBool $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
