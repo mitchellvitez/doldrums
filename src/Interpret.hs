@@ -73,6 +73,7 @@ eval (ExprApplication (ExprApplication (ExprVariable op) a) b) = do
       "<"  -> evalBinCompOp op a b
       "<=" -> evalBinCompOp op a b
       "$"  -> eval (ExprApplication a b)
+      x -> throw . RuntimeException $ "Unknown operation: " <> x
     Just expr -> eval $ ExprApplication (ExprApplication expr a) b
 
 -- basic lambda calculus
@@ -110,6 +111,7 @@ evalBinIntOp op a b = do
       "-" -> (-)
       "*" -> (*)
       "/" -> div
+      x -> throw . RuntimeException $ "Unknown binary integer operation: " <> x
   case (evalA, evalB) of
     (ExprInt x, ExprInt y) -> pure . ExprInt $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
@@ -124,6 +126,7 @@ evalBinDoubleOp op a b = do
       "-." -> (-)
       "*." -> (*)
       "/." -> (/)
+      x -> throw . RuntimeException $ "Unknown binary double operation: " <> x
   case (evalA, evalB) of
     (ExprDouble x, ExprDouble y) -> pure . ExprDouble $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
@@ -136,6 +139,7 @@ evalBinBoolOp op a b = do
     primOp = case op of
       "&&" -> (&&)
       "||" -> (||)
+      x -> throw . RuntimeException $ "Unknown binary bool operation: " <> x
   case (evalA, evalB) of
     (ExprBool x, ExprBool y) -> pure . ExprBool $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
@@ -152,6 +156,7 @@ evalBinCompOp op a b = do
       "<=" -> (<=)
       ">"  -> (>)
       ">=" -> (>=)
+      x -> throw . RuntimeException $ "Unknown comparison operation: " <> x
   case (evalA, evalB) of
     (ExprInt x, ExprInt y) -> pure . ExprBool $ x `primOp` y
     -- TODO

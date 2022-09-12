@@ -5,24 +5,20 @@ module Lib
  )
 where
 
-import Template
 import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import Language
 import Interpret
 
-import Control.DeepSeq (force)
-import Control.Exception (throw, catch, evaluate)
+import Control.Exception (catch)
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
 import qualified Data.Map as Map
 import System.Exit (exitFailure)
-import Text.Megaparsec (parse, errorBundlePretty, SourcePos(..))
-import Text.Megaparsec.Pos (sourcePosPretty, unPos)
+import Text.Megaparsec (parse, errorBundlePretty)
 import qualified Data.Text as Text
-import Control.Monad.State (runState)
 
 tprint :: Text -> IO ()
 tprint = putStrLn . unpack

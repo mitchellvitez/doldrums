@@ -177,9 +177,10 @@ parseDouble = lexeme L.float
 parseBool :: Parser Bool
 parseBool = do
   s <- string "True" <|> string "False"
-  pure $ case s of
-    "True" -> True
-    "False" -> False
+  case s of
+    "True" -> pure True
+    "False" -> pure False
+    _ -> fail "Couldn't parse bool"
 
 parseString :: Parser Text
 parseString = char '"' >> pack <$> manyTill L.charLiteral (char '"')

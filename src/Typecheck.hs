@@ -16,10 +16,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Kind hiding (Type)
-import Data.Text (Text, unpack, pack)
-import Data.Void
-import Text.Megaparsec.Pos (SourcePos)
+import Data.Text (Text, pack)
 
 data Type
   = Bool
@@ -77,6 +74,7 @@ instance Types Type where
   freeTypeVariable Bool = Set.empty
   freeTypeVariable String = Set.empty
   freeTypeVariable Double = Set.empty
+  freeTypeVariable Constructor = Set.empty
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
@@ -161,6 +159,7 @@ typeCheckExpr _ (ExprInt _) = pure (emptySubstitution, Int)
 typeCheckExpr _ (ExprBool _) = pure (emptySubstitution, Bool)
 typeCheckExpr _ (ExprString _) = pure (emptySubstitution, String)
 typeCheckExpr _ (ExprDouble _) = pure (emptySubstitution, Double)
+typeCheckExpr _ (ExprConstructor _ _) = pure (emptySubstitution, Constructor)
 typeCheckExpr (TypeEnv env) (ExprVariable name) = case Map.lookup name env of
   Nothing -> throw . TypeCheckingException $ "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
   Just ty -> do

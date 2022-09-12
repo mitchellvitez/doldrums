@@ -3,7 +3,7 @@
 module Language where
 
 import Control.DeepSeq (NFData)
-import Data.Text (Text, pack, intercalate)
+import Data.Text (Text)
 import GHC.Generics
 import Text.Megaparsec (SourcePos)
 
