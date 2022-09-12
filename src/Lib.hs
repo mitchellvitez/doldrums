@@ -6,6 +6,7 @@ module Lib
 where
 
 import Template
+import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import Language
@@ -85,6 +86,8 @@ runBase programText strat isDebug = do
           let program = normalizeAST unnormalizedProgram
           debug isDebug "AST" $ print program
 
+          debug isDebug "GRAPHVIZ" . putStrLn . unpack $ toGraphviz program
+
           let typecheckingFailureHandler (TypeCheckingException msg) =
                 tprint msg >> exitFailure
           (types, state) <- typeInference program `catch` typecheckingFailureHandler
@@ -96,16 +99,14 @@ runBase programText strat isDebug = do
           -- TODO: replace the below with LLVM
 
           -- template instantiation
-          {-
-          let !state = compile prelude unnormalizedProgram
-          debug isDebug "STATE" $ print state
+          -- let !state = compile prelude unnormalizedProgram
+          -- debug isDebug "STATE" $ print state
 
-          let !evaluated = eval state
-          debug isDebug "EVALUATION" . tprint $ showResults evaluated
+          -- let !evaluated = Template.eval state
+          -- debug isDebug "EVALUATION" . tprint $ showResults evaluated
 
-          debug isDebug "OUTPUT" $ pure ()
-          strat $ showFinalResults evaluated
-          -}
+          -- debug isDebug "OUTPUT" $ pure ()
+          -- strat $ showFinalResults evaluated
 
           -- lambda calculus interpreter
           debug isDebug "OUTPUT" $ pure ()

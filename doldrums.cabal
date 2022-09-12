@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 74b5f55bb063a0a41106bbb1d1c37ecd4b5d69dce160f0c7c0da540f953133a5
+-- hash: 6c9cacd6b3addad57e00ac2a5f50bd431cb73e138f19ab882a72763dd61ee589
 
 name:           doldrums
 version:        0.1.0.0
@@ -25,6 +25,7 @@ source-repository head
 
 library
   exposed-modules:
+      Graphviz
       Heap
       Interpret
       Language

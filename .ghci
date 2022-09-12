@@ -1,0 +1,3 @@
+:set -fwarn-unused-binds -fwarn-unused-imports -fwarn-incomplete-patterns
+:set -isrc
+:load Main

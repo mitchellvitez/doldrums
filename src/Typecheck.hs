@@ -200,7 +200,6 @@ primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
   [ ("+", Int :-> Int :-> Int )
   , ("+.", Double :-> Double :-> Double )
-  , ("$", TypeVariable "prim2" :-> TypeVariable "prim3" :-> TypeVariable "prim4")
   , ("if", Bool :-> TypeVariable "prim5" :-> TypeVariable "prim6")
   , ("==", TypeVariable "prim7" :-> TypeVariable "prim8" :-> Bool)
   , ("-", TypeVariable "prim9" :-> TypeVariable "prim9" :-> TypeVariable "prim9")

@@ -95,6 +95,8 @@ binaryOp :: Text -> Operator Parser Expr
 binaryOp name = InfixR $ binaryOpAST name <$ (lexeme . try) (string name)
 
 binaryOpAST :: Text -> Expr -> Expr -> Expr
+binaryOpAST "$" expr1 expr2 =
+  ExprApplication expr1 expr2
 binaryOpAST name expr1 expr2 =
   ExprApplication (ExprApplication (ExprVariable name) expr1) expr2
 
