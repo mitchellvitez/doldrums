@@ -100,6 +100,7 @@ eval (ExprApplication func arg) = do
       modify $ Map.insert name evalArg
       eval lambdaExpr
     x -> throw . RuntimeException $ "Tried to apply something that isn't a lambda: " <> tshow x
+eval _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
 evalBinIntOp :: Name -> Expr -> Expr -> State Env Expr
 evalBinIntOp op a b = do

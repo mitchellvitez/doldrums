@@ -10,23 +10,23 @@ negate x = ~x;
 -- TODO add something that auto generates tags from `False = Pack{Bool,0}`
 -- and `True = Pack{Bool,0}`. Maybe just Bool 0 (reserve upper case names)
 -- data True 0 | False 0;
-False = Pack{1,0};
-True = Pack{2,0};
+False = Pack{0,0};
+True = Pack{1,0};
 not x = if x False True;
 and x y = if x y False;
 or x y = if x True y;
 xor x y = if x (not y) y;
 
 -- pairs
--- data MkPair 2;
-MkPair = Pack{1,2};
+-- data MkPair = MkPair 2;
+MkPair = Pack{0,2};
 fst p = casePair p K;
 snd p = casePair p K1;
 
 -- lists
--- data Nil 0 | LCons 2;
+-- data List = Nil | Cons 2;
 LCons = Pack{2,2};
-Nil = Pack{1,0};
+Nil = Pack{0,0};
 head xs = caseList xs abort K;
 tail xs = caseList xs abort K1;
 length xs = caseList xs 0 length2;

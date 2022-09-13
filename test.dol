@@ -8,4 +8,5 @@ id = (\x. x);
 
 f x y = id $ snd $ pair x y;
 
-main = f three (id four);
+main =
+  f three (id four);

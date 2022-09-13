@@ -16,6 +16,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Text.Megaparsec (SourcePos)
 import Data.Text (Text, pack)
 
 data Type
@@ -87,7 +88,7 @@ instance Types a => Types [a] where
   freeTypeVariable list = foldr Set.union Set.empty $ map freeTypeVariable list
   apply subs = map $ apply subs
 
-data TypeCheckingException = TypeCheckingException Text
+data TypeCheckingException = TypeCheckingException SourcePos Text
   deriving (Eq, Show)
 instance Exception TypeCheckingException
 
@@ -125,28 +126,28 @@ instantiate (Scheme vars t) = do
   let subs = Map.fromList $ zip vars newVars
   pure $ apply subs t
 
-unify :: Type -> Type -> TypeInstantiation Substitution
-unify (a1 :-> b1) (a2 :-> b2) = do
-  subs1 <- unify a1 a2
-  subs2 <- unify (apply subs1 b1) (apply subs1 b2)
+unify :: SourcePos -> Type -> Type -> TypeInstantiation Substitution
+unify sourcePos (a1 :-> b1) (a2 :-> b2) = do
+  subs1 <- unify sourcePos a1 a2
+  subs2 <- unify sourcePos (apply subs1 b1) (apply subs1 b2)
   pure $ subs1 `combineSubstitutions` subs2
-unify (TypeVariable u) t = varBind u t
-unify t (TypeVariable u) = varBind u t
-unify Int Int = pure emptySubstitution
-unify Bool Bool = pure emptySubstitution
-unify String String = pure emptySubstitution
-unify Double Double = pure emptySubstitution
-unify a b = throw . TypeCheckingException $ fold
+unify sourcePos (TypeVariable u) t = varBind sourcePos u t
+unify sourcePos t (TypeVariable u) = varBind sourcePos u t
+unify _ Int Int = pure emptySubstitution
+unify _ Bool Bool = pure emptySubstitution
+unify _ String String = pure emptySubstitution
+unify _ Double Double = pure emptySubstitution
+unify sourcePos a b = throw . TypeCheckingException sourcePos $ fold
   [ "Type mismatch: "
   , tshow a
   , " does not match "
   , tshow b
   ]
 
-varBind :: Name -> Type -> TypeInstantiation Substitution
-varBind u t
+varBind :: SourcePos -> Name -> Type -> TypeInstantiation Substitution
+varBind sourcePos u t
   | t == TypeVariable u = pure emptySubstitution
-  | u `Set.member` freeTypeVariable t = throw . TypeCheckingException $ fold
+  | u `Set.member` freeTypeVariable t = throw . TypeCheckingException sourcePos $ fold
       [ "Occurs check failed: "
       , u
       , " does not match "
@@ -154,30 +155,33 @@ varBind u t
       ]
   | otherwise = pure $ Map.singleton u t
 
-typeCheckExpr :: TypeEnv -> Expr -> TypeInstantiation (Substitution, Type)
-typeCheckExpr _ (ExprInt _) = pure (emptySubstitution, Int)
-typeCheckExpr _ (ExprBool _) = pure (emptySubstitution, Bool)
-typeCheckExpr _ (ExprString _) = pure (emptySubstitution, String)
-typeCheckExpr _ (ExprDouble _) = pure (emptySubstitution, Double)
-typeCheckExpr _ (ExprConstructor _ _) = pure (emptySubstitution, Constructor)
-typeCheckExpr (TypeEnv env) (ExprVariable name) = case Map.lookup name env of
-  Nothing -> throw . TypeCheckingException $ "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
-  Just ty -> do
-    instantiatedType <- instantiate ty
-    pure (emptySubstitution, instantiatedType)
-typeCheckExpr env (ExprLambda name expr) = do
+typeCheckExpr :: TypeEnv -> AnnotatedExpr SourcePos -> TypeInstantiation (Substitution, Type)
+typeCheckExpr _ (AnnExprInt _ _) = pure (emptySubstitution, Int)
+typeCheckExpr _ (AnnExprBool _ _) = pure (emptySubstitution, Bool)
+typeCheckExpr _ (AnnExprString _ _) = pure (emptySubstitution, String)
+typeCheckExpr _ (AnnExprDouble _ _) = pure (emptySubstitution, Double)
+typeCheckExpr _ (AnnExprConstructor _ _ _) = pure (emptySubstitution, Constructor)
+typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
+  case Map.lookup name env of
+    Nothing ->
+      throw . TypeCheckingException sourcePos $
+        "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
+    Just ty -> do
+      instantiatedType <- instantiate ty
+      pure (emptySubstitution, instantiatedType)
+typeCheckExpr env (AnnExprLambda _ name expr) = do
   typeVar <- newTypeVar "a"
   let TypeEnv env1 = remove env name
       env2 = TypeEnv $ env1 `Map.union` Map.singleton name (Scheme [] typeVar)
   (subs1, type1) <- typeCheckExpr env2 expr
   pure $ (subs1, apply subs1 typeVar :-> type1)
-typeCheckExpr env (ExprApplication expr1 expr2) = do
+typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   typeVar <- newTypeVar "a"
   (subs1, type1) <- typeCheckExpr env expr1
   (subs2, type2) <- typeCheckExpr (apply subs1 env) expr2
-  subs3 <- unify (apply subs2 type1) (type2 :-> typeVar)
+  subs3 <- unify sourcePos (apply subs2 type1) (type2 :-> typeVar)
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
-typeCheckExpr env (ExprLet name expr1 expr2) = do
+typeCheckExpr env (AnnExprLet _ name expr1 expr2) = do
   (subs1, type1) <- typeCheckExpr env expr1
   let TypeEnv env1 = remove env name
       generalizedType = generalize (apply subs1 env) type1
@@ -185,12 +189,12 @@ typeCheckExpr env (ExprLet name expr1 expr2) = do
   (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
   pure (subs1 `combineSubstitutions` subs2, type2)
 
-infer :: Map Name Scheme -> Expr -> TypeInstantiation Type
+infer :: Map Name Scheme -> AnnotatedExpr SourcePos -> TypeInstantiation Type
 infer env expr = do
   (subs, type_) <- typeCheckExpr (TypeEnv env) expr
   pure $ apply subs type_
 
-typeInference :: Expr -> IO (Either Text Type, TypeInstantiationState)
+typeInference :: AnnotatedExpr SourcePos -> IO (Either Text Type, TypeInstantiationState)
 typeInference program =
   runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes) program
 

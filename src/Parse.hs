@@ -11,8 +11,7 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-data PartialExpr = NoOp | FoundOp Name Expr
-
+spaceConsumer :: Parser ()
 spaceConsumer =
   L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
 
@@ -27,6 +26,19 @@ parseProgram = do
   spaceConsumer
   some parseTopLevelDefn
 
+-- TODO: get significant whitespace working
+-- parseTopLevelDefn :: Parser TopLevelDefn
+-- parseTopLevelDefn = do
+--   L.indentBlock spaceConsumer indentedBlock
+--   where
+--     indentedBlock = do
+--       name <- parseName
+--       vars <- many parseName
+--       lexeme $ char '='
+--       pure $ L.IndentMany Nothing (exprsToBlock name vars) (spaceConsumer >> parseAnnotatedExpr)
+--     exprsToBlock name vars [body] = pure (name, vars, body)
+--     exprsToBlock name vars x = fail $ "More than one body in top-level definition: " <> show x
+
 parseTopLevelDefn :: Parser TopLevelDefn
 parseTopLevelDefn = do
   name <- parseName
@@ -36,11 +48,11 @@ parseTopLevelDefn = do
   lexeme $ char ';'
   pure $ (name, vars, body)
 
-parseAnnotatedExpr :: Parser (Annotated Expr)
+parseAnnotatedExpr :: Parser (AnnotatedExpr SourcePos)
 parseAnnotatedExpr = do
-  expr <- parseExpr
   sourcePos <- getSourcePos
-  pure $ Annotated sourcePos expr
+  expr <- parseExpr
+  pure $ const sourcePos <$> expr
 
 parseExpr :: Parser Expr
 parseExpr =
@@ -176,14 +188,14 @@ parseDouble = lexeme L.float
 
 parseBool :: Parser Bool
 parseBool = do
-  s <- string "True" <|> string "False"
+  s <- lexeme (string "True") <|> lexeme (string "False")
   case s of
     "True" -> pure True
     "False" -> pure False
     _ -> fail "Couldn't parse bool"
 
 parseString :: Parser Text
-parseString = char '"' >> pack <$> manyTill L.charLiteral (char '"')
+parseString = lexeme $ char '"' >> pack <$> manyTill L.charLiteral (char '"')
 
 parseName :: Parser Name
 parseName = lexeme $ try $ do

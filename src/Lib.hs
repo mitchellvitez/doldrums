@@ -13,11 +13,12 @@ import Interpret
 
 import Control.Exception (catch)
 import Control.Monad (when)
+import Data.Foldable
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
 import qualified Data.Map as Map
 import System.Exit (exitFailure)
-import Text.Megaparsec (parse, errorBundlePretty)
+import Text.Megaparsec (parse, errorBundlePretty, SourcePos, sourceLine, sourceColumn, unPos)
 import qualified Data.Text as Text
 
 tprint :: Text -> IO ()
@@ -51,18 +52,18 @@ debug isDebug label action = when isDebug $ do
   tprint $ "\n -- " <> label <> " -- "
   action
 
-lookupMain :: Program -> Expr
+lookupMain :: Program -> AnnotatedExpr SourcePos
 lookupMain [] = error "No main function is defined."
-lookupMain ((name, _, Annotated _ body):rest)
+lookupMain ((name, _, body):rest)
   | name == "main" = body
   | otherwise = lookupMain rest
 
-toLambda :: TopLevelDefn -> (Name, Expr)
-toLambda (name, vars, Annotated _ expr) =
-  (name, Prelude.foldr ExprLambda expr vars)
+toLambda :: TopLevelDefn -> (Name, AnnotatedExpr SourcePos)
+toLambda (name, vars, expr) =
+  (name, Prelude.foldr (AnnExprLambda $ annotation expr) expr vars)
 
-normalizeAST :: Program -> Expr
-normalizeAST program = foldr (\(name, expr) -> ExprLet name expr) (lookupMain program) lambdas
+normalizeAST :: Program -> AnnotatedExpr SourcePos
+normalizeAST program = foldr (\(name, expr) -> AnnExprLet (annotation expr) name expr) (lookupMain program) lambdas
   where
     withoutMain = filter ((\(name, _, _) -> name /= "main"))
     lambdas = map toLambda $ withoutMain program
@@ -80,12 +81,24 @@ runBase programText strat isDebug = do
         Left e -> error $ errorBundlePretty e
         Right unnormalizedProgram -> do
           let program = normalizeAST unnormalizedProgram
-          debug isDebug "AST" $ print program
+          debug isDebug "AST" $ print $ fmap (const void) program
 
-          debug isDebug "GRAPHVIZ" . putStrLn . unpack $ toGraphviz program
+          debug isDebug "GRAPHVIZ" . putStrLn . unpack $ toGraphviz $ fmap (const void) program
 
-          let typecheckingFailureHandler (TypeCheckingException msg) =
-                tprint msg >> exitFailure
+          let typecheckingFailureHandler (TypeCheckingException sourcePos msg) = do
+                putStrLn $ fold
+                  [ "Typechecking failed at "
+                  , show . unPos $ sourceLine sourcePos
+                  , ":"
+                  , show . unPos $ sourceColumn sourcePos
+                  , " in the expression"
+                  ]
+                let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
+                putStrLn $ line <> "v"
+                tprint $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
+                putStrLn $ line <> "^"
+                tprint msg
+                exitFailure
           (types, state) <- typeInference program `catch` typecheckingFailureHandler
           debug isDebug "TYPE" $ do
             putStrLn $ "main : " <> (show $ (\(Right x) -> x) types)
@@ -94,7 +107,7 @@ runBase programText strat isDebug = do
 
           -- TODO: replace the below with LLVM
 
-          -- template instantiation
+          -- template instantiation --
           -- let !state = compile prelude unnormalizedProgram
           -- debug isDebug "STATE" $ print state
 
@@ -104,7 +117,8 @@ runBase programText strat isDebug = do
           -- debug isDebug "OUTPUT" $ pure ()
           -- strat $ showFinalResults evaluated
 
-          -- lambda calculus interpreter
+
+          -- lambda calculus interpreter --
           debug isDebug "OUTPUT" $ pure ()
           let program = normalizeAST $ prelude <> unnormalizedProgram
-          strat $ interpret program
+          strat . interpret $ const void <$> program
