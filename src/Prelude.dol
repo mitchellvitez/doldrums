@@ -1,14 +1,14 @@
-data Bool = True 0 | False 0;
+data Bool = True 0 | False 0
 
-id x = x;
-const x y = x;
-const2 x y = y;
-sCombinator f g x = f x (g x);
-compose f g = \x -> f (g x);
-twice f = compose f f;
-negate x = ~x;
+id x = x
+const x y = x
+const2 x y = y
+sCombinator f g x = f x (g x)
+compose f g = \x -> f (g x)
+twice f = compose f f
+negate x = ~x
 
-not x = if x False True;
-and x y = if x y False;
-or x y = if x True y;
-xor x y = if x (not y) y;
+not x = if x False True
+and x y = if x y False
+or x y = if x True y
+xor x y = if x (not y) y

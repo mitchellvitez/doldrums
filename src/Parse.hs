@@ -1,9 +1,13 @@
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
+
 module Parse where
 
 import Language
 
 import Data.List as List (foldr)
 import Control.Monad.Combinators.Expr
+import Control.Monad (void)
 import Data.Text
 import Data.Void
 import Text.Megaparsec
@@ -14,39 +18,49 @@ import qualified Text.Megaparsec.Char.Lexer as L
 
 type Parser = Parsec Void Text
 
+spaceConsumerNewline :: Parser ()
+spaceConsumerNewline =
+  L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
+
 spaceConsumer :: Parser ()
 spaceConsumer =
-  L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
+  L.space (Control.Monad.void $ oneOf (" \t" :: String)) (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
 
-parseProgram :: Parser (Program SourcePos)
-parseProgram = do
-  spaceConsumer
-  topLevels <- parseTopLevel `endBy1` lexeme (char ';')
-  pure $ reversals $ accumTopLevels topLevels $ Program [] []
-  where
-    accumTopLevels [] x = x
-    accumTopLevels (Func function : rest) program = accumTopLevels rest
-      program { functions = function : functions program }
-    accumTopLevels (Decl dataDeclaration : rest) program = accumTopLevels rest
-      program { dataDeclarations = dataDeclaration : dataDeclarations program }
-    reversals (Program f d) = Program (Prelude.reverse f) (Prelude.reverse d)
-
 data TopLevel a = Decl DataDeclaration | Func (Function a)
+
+parseProgram :: Parser (Program SourcePos)
+parseProgram =
+  topLevelToProgram (Program [] []) <$> some parseTopLevel
+
+topLevelToProgram :: Program SourcePos -> [TopLevel SourcePos] -> Program SourcePos
+topLevelToProgram program [] = program
+topLevelToProgram Program{..} (topLevel:rest) = case topLevel of
+  Decl (d@(DataDeclaration _ _)) -> topLevelToProgram Program{..} { dataDeclarations = d : dataDeclarations } rest
+  Func (f@(Function _ _ _ _)) -> topLevelToProgram Program{..} { functions = f : functions } rest
 
 parseTopLevel :: Parser (TopLevel SourcePos)
 parseTopLevel =
-  try (Decl <$> parseDataDeclaration) <|>
-  Func <$> parseFunction
+  L.nonIndented spaceConsumerNewline $ L.lineFold spaceConsumerNewline parseEitherTopLevel
 
-parseFunction :: Parser (Function SourcePos)
-parseFunction = do
+parseEitherTopLevel :: Parser () -> Parser (TopLevel SourcePos)
+parseEitherTopLevel lineFoldSpaceConsumer =
+  try (Decl <$> parseDataDeclaration) <|>
+  Func <$> (parseFunction lineFoldSpaceConsumer)
+
+symbol :: Text -> Parser ()
+symbol s = L.symbol' spaceConsumer s >> return ()
+
+parseFunction :: Parser () -> Parser (Function SourcePos)
+parseFunction lineFoldSpaceConsumer = do
   name <- parseName
   args <- many parseName
-  lexeme $ char '='
+  symbol "="
+  lineFoldSpaceConsumer
   body <- parseAnnotatedExpr
+  spaceConsumerNewline
   sourcePos <- getSourcePos
   pure $ Function sourcePos name args body
 
