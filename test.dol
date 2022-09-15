@@ -1,12 +1,16 @@
-three = if (2 == 3 || 3 < 4) 3 7;
-four = ((1 + 6 - 2) * 4) / 5;
+/* three = if (2 == 3 || 3 < 4) 3 7; */
+/* four = ((1 + 6 - 2) * 4) / 5; */
 
-pair x y f = f x y;
-fst p = p K;
-snd p = p K1;
-id = (\x. x);
+/* pair x y f = f x y; */
+/* fst p = p K; */
+/* snd p = p K1; */
+/* id x = x; */
 
-f x y = id $ snd $ pair x y;
+/* f x y = id $ snd $ pair x y; */
 
-main =
-  f three (id four);
+/* main = */
+/*   f three (id four); */
+
+twice f x = f (f x);
+id x = x;
+main = id 3;

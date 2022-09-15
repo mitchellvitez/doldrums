@@ -1,4 +1,7 @@
-module Parse where
+module Parse
+  ( parseProgram
+  )
+where
 
 import Language
 

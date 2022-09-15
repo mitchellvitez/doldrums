@@ -5,7 +5,10 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Language where
+module Language
+  ( module Language
+  )
+where
 
 import Data.Text (Text)
 import Data.Void

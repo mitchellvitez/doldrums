@@ -1,8 +1,8 @@
 {-# language FlexibleInstances #-}
 
-module Template
+module TemplateInstantiation
  ( eval
- , compile
+ , toInitialState
  , showResults
  , showFinalResults
  )
@@ -14,7 +14,6 @@ import Heap
 import Data.List (mapAccumL, sort)
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
-import Data.Void (Void)
 
 type TiState = (TiStack, TiDump, TiHeap, TiGlobals, TiStats)
 
@@ -59,8 +58,8 @@ assocLookup _ [] errMsg = error $ show errMsg
 assocLookup a ((x, y):xs) errMsg =
   if a == x then y else assocLookup a xs errMsg
 
-compile :: Program -> Program -> TiState
-compile prelude program = (initialStack, initialTiDump, initialHeap, globals, tiStatInitial)
+toInitialState :: Program -> Program -> TiState
+toInitialState prelude program = (initialStack, initialTiDump, initialHeap, globals, tiStatInitial)
   where
     initialStack = [addressOfMain]
     (initialHeap, globals) = buildInitialHeap scDefs
@@ -124,6 +123,7 @@ step state@(stack, _, heap, _, _) =
 literalStep :: TiState -> a -> TiState
 literalStep (stack, stack2:dump, heap, globals, stats) n =
   (stack2, dump, heap, globals, stats)
+literalStep _ _ = error "literalStep: no more dump to step through"
 
 apStep :: TiState -> Addr -> Addr -> TiState
 apStep (stack, dump, heap, globals, stats) a1 a2 =
@@ -146,10 +146,12 @@ scStep (stack, dump, heap, globals, stats) sc argNames body
 indStep :: TiState -> Addr -> TiState
 indStep (a : stack, dump, heap, globals, stats) a2 =
   (a2 : stack, dump, heap, globals, stats)
+indStep _ _ = error "indStep: no more stack to step through"
 
 dataStep :: TiState -> Tag -> [Addr] -> TiState
 dataStep (stack, stack2:dump, heap, globals, stats) tag compts =
   (stack2, dump, heap, globals, stats)
+dataStep _ _ _ = error "dataStep: no more dump to step through"
 
 primStep :: TiState -> Primitive -> TiState
 primStep state prim = prim state
@@ -179,6 +181,7 @@ instantiate (ExprLet name expr body) heap oldEnv =
     instantiateRhs heap3 (name, rhs) = (heap2, (name, addr))
       where (heap2, addr) = instantiate rhs heap3 newEnv
 instantiate (ExprLambda _ _ ) _ _ = error "Can't instantiate lambda exprs"
+instantiate _ _ _ = error "instantiate: incomplete pattern matches due to PatternSynonyms"
 
 instantiateAndUpdate :: Expr -> Addr -> TiHeap -> Assoc Text Addr -> TiHeap
 instantiateAndUpdate (ExprInt v) updateAddr heap env =
@@ -209,6 +212,9 @@ instantiateAndUpdate (ExprLet name expr body) updateAddr heap oldEnv =
         (heap1, addr) = instantiate rhs heap newEnv
 instantiateAndUpdate (ExprConstructor tag arity) updateAddr heap env =
   hUpdate heap updateAddr . NPrim "Cons" $ primConstr tag arity
+instantiateAndUpdate (ExprLambda name expr) updateAddr heap oldEnv =
+  error "instantiateAndUpdate: not implemented for ExprLambda yet" -- TODO
+instantiateAndUpdate _ _ _ _ = error "instantiateAndUpdate: incomplete pattern matches due to PatternSynonyms"
 
 instantiateConstr :: Tag -> Int -> TiHeap -> Assoc Text Addr -> (TiHeap, Addr)
 instantiateConstr tag arity heap env =
@@ -426,9 +432,9 @@ primApply (stack, dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
     args = getArgs heap stack
-    (arg1addr:arg2addr:restArgs) = args
-    arg1node = hLookup heap arg1addr
-    arg2node = hLookup heap arg2addr
+    (arg1addr:arg2addr:_) = args
+    -- arg1node = hLookup heap arg1addr
+    -- arg2node = hLookup heap arg2addr
     newStack = drop 2 stack
     rootOfRedex = head newStack
     newHeap = hUpdate heap rootOfRedex $ NAp arg1addr arg2addr
@@ -440,7 +446,7 @@ primIf (stack, dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
     args = getArgs heap stack
-    (arg1addr:arg2addr:arg3addr:restArgs) = args
+    (arg1addr:arg2addr:arg3addr:_) = args
     arg1node = hLookup heap arg1addr
     newStack = drop 3 stack
     rootOfRedex = head newStack
@@ -457,11 +463,11 @@ primCasePair (stack, dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
     args = getArgs heap stack
-    (arg1addr:arg2addr:restArgs) = args
+    (arg1addr:arg2addr:_) = args
     arg1node = hLookup heap arg1addr
     newStack = drop 2 stack
     rootOfRedex = head newStack
-    NData tag [fst,snd] = arg1node
+    NData _ [fst,snd] = arg1node
     newHeap = hUpdate heap1 rootOfRedex (NAp tempAddr snd)
       where (heap1, tempAddr) = hAlloc heap (NAp arg2addr fst)
 
@@ -473,7 +479,7 @@ primCaseList (stack, dump, heap, globals, stats)
   | otherwise = (newStack, dump, newHeap, globals, stats)
   where
     args = getArgs heap stack
-    (arg1addr:arg2addr:arg3addr:restArgs) = args
+    (arg1addr:arg2addr:arg3addr:_) = args
     arg1node = hLookup heap arg1addr
     newStack = drop 3 stack
     rootOfRedex = Prelude.head newStack

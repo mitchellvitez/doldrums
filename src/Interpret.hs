@@ -1,4 +1,7 @@
-module Interpret where
+module Interpret
+  ( interpret
+  )
+where
 
 import Language
 

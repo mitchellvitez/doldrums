@@ -13,6 +13,9 @@ import Control.Monad.State
 import Data.Foldable
 import Data.Text
 
+-- runs two passes:
+--   1. label each node in the expr with unique integer
+--   2. use the labeled expr tree to generate graphviz
 toGraphviz :: Expr -> Text
 toGraphviz e = fold
   [ "digraph {\n  rankdir=BT\n  ordering=in\n  0 [label=\"main\"]\n  1 -> 0"

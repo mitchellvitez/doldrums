@@ -1,7 +1,12 @@
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 {-# LANGUAGE GADTs #-}
 
-module Typecheck where
+module Typecheck
+  ( typeInference
+  , TypeCheckingException(..)
+  , TypeInstantiationState(..)
+  )
+where
 
 import Language
 

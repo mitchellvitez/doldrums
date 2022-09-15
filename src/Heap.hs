@@ -8,6 +8,8 @@ module Heap
    , hFree
    , hAddresses
    , hLookup
+   , aLookup
+   , hToList
    )
    where
 
@@ -43,6 +45,9 @@ hSize (Heap size _ _) = size
 
 hAddresses :: Heap a -> [Addr]
 hAddresses (Heap _ _ xs) = [addr | (addr, _) <- xs]
+
+hToList :: Heap a -> [(Addr, a)]
+hToList (Heap _ _ xs) = xs
 
 hLookup :: Heap a -> Addr -> a
 hLookup (Heap _ _ xs) a = aLookup xs a

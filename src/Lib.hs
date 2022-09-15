@@ -9,7 +9,9 @@ import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import Language
-import Interpret
+-- import Interpret
+-- import TemplateInstantiation
+import GMachine
 
 import Control.Exception (catch)
 import Control.Monad (when)
@@ -105,20 +107,27 @@ runBase programText strat isDebug = do
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
-          -- TODO: replace the below with LLVM
+          -- many different interpreters/compilers exist with different properties
+          --   1. strict lambda calculus interpreter that just walks the AST
+          --   2. lazy template instantiation interpreter
+          --   3. G-machine
+          -- TODO: compile to LLVM
+
+          -- lambda calculus interpreter (strict) --
+          -- debug isDebug "OUTPUT" $ pure ()
+          -- let program = normalizeAST $ prelude <> unnormalizedProgram
+          -- strat . interpret $ const void <$> program
 
           -- template instantiation --
-          -- let !state = compile prelude unnormalizedProgram
+          -- let !state = toInitialState prelude unnormalizedProgram
           -- debug isDebug "STATE" $ print state
 
-          -- let !evaluated = Template.eval state
+          -- let !evaluated = eval state
           -- debug isDebug "EVALUATION" . tprint $ showResults evaluated
 
           -- debug isDebug "OUTPUT" $ pure ()
           -- strat $ showFinalResults evaluated
 
-
-          -- lambda calculus interpreter --
+          -- G machine --
           debug isDebug "OUTPUT" $ pure ()
-          let program = normalizeAST $ prelude <> unnormalizedProgram
-          strat . interpret $ const void <$> program
+          strat . gMachine $ map (\(a, b, c) -> (a, b, const void <$> c)) unnormalizedProgram
