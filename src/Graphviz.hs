@@ -69,6 +69,13 @@ label (ExprLet name binding body) = do
   labeledBinding <- label binding
   labeledBody <- label body
   pure $ AnnExprLet n name labeledBinding labeledBody
+label (ExprCase scrutinee alts) = do
+  n <- getNext
+  labeledScrutinee <- label scrutinee
+  labeledAlts <- forM alts $ \(n, vars, expr) -> do
+    labeledExpr <- label expr
+    pure (n, vars, labeledExpr)
+  pure $ AnnExprCase n labeledScrutinee labeledAlts
 label _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
 exprToGraphviz :: AnnotatedExpr Integer -> Text
@@ -98,3 +105,14 @@ exprToGraphviz (AnnExprLambda n name expr) = fold
   , exprToGraphviz expr
   , annotation expr `pointsTo` n
   ]
+exprToGraphviz (AnnExprCase n expr alts) = fold
+  [ node n $ "Case"
+  , exprToGraphviz expr
+  , annotation expr `pointsTo` n
+  ]
+  <> fold (Prelude.map toNodes alts)
+  where
+    toNodes (_n, _names, alt) = fold
+      [ exprToGraphviz alt
+      , annotation alt `pointsTo` n
+      ]

@@ -11,6 +11,19 @@
 /* main = */
 /*   f three (id four); */
 
-twice f x = f (f x);
-id x = x;
-main = id 3;
+/* twice f x = f (f x); */
+/* id x = x; */
+/* main = fac 4; */
+
+/* main = fac 3; */
+/* fac n = if (n == 0) 1 (n * fac (n-1)); */
+
+iff c t f = case c of 1 -> f, 2 -> t;
+
+main = iff (1 < 2) 3 4;
+
+-- try this test case for parsing
+/* f x y = case x of */
+/*   1 -> case y of */
+/*     1 -> 1, */
+/*   2 -> 2; */

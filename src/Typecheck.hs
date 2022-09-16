@@ -24,6 +24,11 @@ import qualified Data.Set as Set
 import Text.Megaparsec (SourcePos)
 import Data.Text (Text, pack)
 
+-- TODO add typechecking for recursion, e.g. this program:
+-- main = fac 3;
+-- fac n = if (n == 0) 1 (n * fac (n-1));
+
+
 data Type
   = Bool
   | Int
@@ -193,6 +198,14 @@ typeCheckExpr env (AnnExprLet _ name expr1 expr2) = do
       env2 = TypeEnv $ Map.insert name generalizedType env1
   (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
   pure (subs1 `combineSubstitutions` subs2, type2)
+typeCheckExpr env (AnnExprCase _ expr alts) = do
+  typeCheckExpr env expr -- TODO: also check the alts for type correctness
+  -- (subs1, type1) <- typeCheckExpr env expr
+  -- let TypeEnv env1 = remove env name
+  --     generalizedType = generalize (apply subs1 env) type1
+  --     env2 = TypeEnv $ Map.insert name generalizedType env1
+  -- (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
+  -- pure (subs1 `combineSubstitutions` subs2, type2)
 
 infer :: Map Name Scheme -> AnnotatedExpr SourcePos -> TypeInstantiation Type
 infer env expr = do
@@ -204,6 +217,7 @@ typeInference program =
   runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes) program
 
 -- TODO: add type inference for recursive/mutually recursive functions so fewer of these are necessary
+-- TODO: add primitiveTypes for all primitive operators as well as everything in Prelude.dol
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
   [ ("+", Int :-> Int :-> Int )
@@ -219,4 +233,9 @@ primitiveTypes = Map.fromList
   , ("K1", TypeVariable "prim15" :-> TypeVariable "prim16" :-> TypeVariable "prim16")
   , ("~", TypeVariable "prim17" :-> TypeVariable "prim17")
   , ("*", Int :-> Int :-> Int)
+  , ("negate", TypeVariable "prim18" :-> TypeVariable "prim18")
+  , ("twice", (TypeVariable "prim19" :-> TypeVariable "prim19") :-> TypeVariable "prim19")
+  , ("fac", Int :-> Int)
+  , ("I", TypeVariable "prim20" :-> TypeVariable "prim20")
+  , (">", TypeVariable "prim21" :-> TypeVariable "prim21" :-> Bool)
   ]

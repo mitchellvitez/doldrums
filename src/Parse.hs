@@ -1,7 +1,4 @@
-module Parse
-  ( parseProgram
-  )
-where
+module Parse where
 
 import Language
 
@@ -61,6 +58,7 @@ parseExpr :: Parser Expr
 parseExpr =
   try parseExprLet    <|>
   try parseExprLambda <|>
+  try parseExprCase   <|>
   parseOperator
 
 parseOperator :: Parser Expr
@@ -145,6 +143,22 @@ parseExprLet = do
   lexeme $ string "in"
   body <- parseExpr
   pure $ Prelude.foldr (\(name, expr) -> ExprLet name expr) body definitions
+
+parseExprCase :: Parser Expr
+parseExprCase = do
+  lexeme $ string "case"
+  scrutinee <- parseExpr
+  lexeme $ string "of"
+  alternatives <- parseCaseAlternative `sepBy1` lexeme (char ',')
+  pure $ ExprCase scrutinee alternatives
+
+parseCaseAlternative :: Parser (Int, [Name], Expr)
+parseCaseAlternative = do
+  caseNum <- parseInt
+  names <- many parseName
+  lexeme $ string "->"
+  expr <- parseExpr
+  pure (caseNum, names, expr)
 
 parseDefinition :: Parser (Name, Expr)
 parseDefinition = do

@@ -129,5 +129,7 @@ runBase programText strat isDebug = do
           -- strat $ showFinalResults evaluated
 
           -- G machine --
+          debug isDebug "EVALUATION" . tprint $ gMachine $ map (\(a, b, c) -> (a, b, const void <$> c)) (prelude <> unnormalizedProgram)
+
           debug isDebug "OUTPUT" $ pure ()
-          strat . gMachine $ map (\(a, b, c) -> (a, b, const void <$> c)) unnormalizedProgram
+          strat . gMachineOutput $ map (\(a, b, c) -> (a, b, const void <$> c)) (prelude <> unnormalizedProgram)

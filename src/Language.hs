@@ -20,6 +20,22 @@ type Program = [TopLevelDefn]
 -- name, list of arguments, body
 type TopLevelDefn = (Name, [Name], AnnotatedExpr SourcePos)
 
+-- case expr of alts
+-- alt ::= <num> var1...varN -> expr,
+--
+-- case mInt of
+--   Nothing -> 0
+--   Just x -> x
+--
+-- case mInt of
+--   0 -> 0,
+--   1 x -> x
+--
+-- case myBool of
+--   0 -> "false",
+--   1 -> "true"
+type CaseAlternative a = (Int, [Name], AnnotatedExpr a)
+
 type Name = Text
 type Tag = Int
 type Arity = Int
@@ -34,6 +50,7 @@ data AnnotatedExpr a
   | AnnExprApplication a (AnnotatedExpr a) (AnnotatedExpr a)
   | AnnExprLet a Name (AnnotatedExpr a) (AnnotatedExpr a)
   | AnnExprLambda a Name (AnnotatedExpr a)
+  | AnnExprCase a (AnnotatedExpr a) [CaseAlternative a]
 deriving instance Show (AnnotatedExpr SourcePos)
 
 annotation :: AnnotatedExpr a -> a
@@ -46,17 +63,19 @@ annotation (AnnExprDouble annot _)        = annot
 annotation (AnnExprConstructor annot _ _) = annot
 annotation (AnnExprLet annot _ _ _)       = annot
 annotation (AnnExprLambda annot _ _)      = annot
+annotation (AnnExprCase annot _ _)        = annot
 
 instance Functor AnnotatedExpr where
-  fmap f (AnnExprInt a x) = AnnExprInt (f a) x
-  fmap f (AnnExprVariable a x) = AnnExprVariable (f a) x
-  fmap f (AnnExprApplication a b c) = AnnExprApplication (f a) (f <$> b) (f <$> c)
-  fmap f (AnnExprBool a x) = AnnExprBool (f a) x
-  fmap f (AnnExprString a x) = AnnExprString (f a) x
-  fmap f (AnnExprDouble a x) = AnnExprDouble (f a) x
-  fmap f (AnnExprConstructor a b c) = AnnExprConstructor (f a) b c
-  fmap f (AnnExprLet a b c d) = AnnExprLet (f a) b (f <$> c) (f <$> d)
-  fmap f (AnnExprLambda a b c) = AnnExprLambda (f a) b (f <$> c)
+  fmap f (AnnExprInt a n) = AnnExprInt (f a) n
+  fmap f (AnnExprVariable a name) = AnnExprVariable (f a) name
+  fmap f (AnnExprApplication a expr1 expr2) = AnnExprApplication (f a) (f <$> expr1) (f <$> expr2)
+  fmap f (AnnExprBool a b) = AnnExprBool (f a) b
+  fmap f (AnnExprString a s) = AnnExprString (f a) s
+  fmap f (AnnExprDouble a d) = AnnExprDouble (f a) d
+  fmap f (AnnExprConstructor a tag arity) = AnnExprConstructor (f a) tag arity
+  fmap f (AnnExprLet a name binding body) = AnnExprLet (f a) name (f <$> binding) (f <$> body)
+  fmap f (AnnExprLambda a name expr) = AnnExprLambda (f a) name (f <$> expr)
+  fmap f (AnnExprCase a expr alters) = AnnExprCase (f a) (f <$> expr) (map (\(n, name, expr) -> (n, name, f <$> expr)) alters)
 
 -- unparametrized AST, recovered by the below
 -- data Expr
@@ -75,6 +94,9 @@ type Expr = AnnotatedExpr Void
 deriving instance Eq Expr
 deriving instance Ord Expr
 
+annotatedToExpr :: AnnotatedExpr a -> Expr
+annotatedToExpr = fmap (const void)
+
 -- not a "lawful" show, condensed for debugging readability
 instance Show Expr where
   show (ExprVariable name) = show name
@@ -86,6 +108,7 @@ instance Show Expr where
   show (ExprApplication a b) = "(App " <> show a <> " " <> show b <> ")"
   show (ExprLet name a b) = "(Let " <> show name <> " " <> show a <> " " <> show b <> ")"
   show (ExprLambda name expr) = "(Lam " <> show name <> " " <> show expr <> ")"
+  show (ExprCase expr alts) = "(Case " <> show expr <> " " <> show alts <> ")"
   show _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
 void :: Void
@@ -126,3 +149,7 @@ pattern ExprLambda name expr <- AnnExprLambda _ name expr
 pattern ExprLet :: Name -> Expr -> Expr -> Expr
 pattern ExprLet name binding body <- AnnExprLet _ name binding body
   where ExprLet name binding body = AnnExprLet void name binding body
+
+pattern ExprCase :: Expr -> [CaseAlternative Void] -> Expr
+pattern ExprCase expr alters <- AnnExprCase _ expr alters
+  where ExprCase expr alters = AnnExprCase void expr alters

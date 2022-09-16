@@ -1,3 +1,6 @@
+-- TODO: add type annotations
+-- until then all these should be in `primitiveTypes`
+
 I x = x;
 K x y = x;
 K1 x y = y;
