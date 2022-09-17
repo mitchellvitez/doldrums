@@ -10,18 +10,23 @@ where
 -- TODO: page 135, 3.8.6
 -- this will add data constructors along with casing on them
 
+import Data.Char (isUpper)
 import Data.Foldable
 import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Void
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Heap
 import Language
 
-gMachine :: [(Name, [Name], Expr)] -> Text
-gMachine = showResults . eval . compile
+gMachine :: Map Tag Arity -> [(Name, [Name], Expr)] -> Text
+gMachine constructorArities =
+  showResults . eval . compile constructorArities
 
-gMachineOutput :: [(Name, [Name], Expr)] -> Text
-gMachineOutput = getOutput . last . eval . compile
+gMachineOutput :: Map Tag Arity -> [(Name, [Name], Expr)] -> Text
+gMachineOutput constructorArities =
+  getOutput . last . eval . compile constructorArities
 
 data GmState = GmState
   { getOutput :: GmOutput
@@ -31,6 +36,7 @@ data GmState = GmState
   , getHeap :: GmHeap
   , getGlobals :: GmGlobals
   , getStats :: GmStats
+  , getArities :: Map Tag Int
   }
 
 type GmOutput = Text
@@ -72,8 +78,8 @@ putDump dump state = state { getDump = dump }
 putHeap :: GmHeap -> GmState -> GmState
 putHeap heap state = state { getHeap = heap }
 
--- putGlobals :: GmGlobals -> GmState -> GmState
--- putGlobals globals state = state { getGlobals = globals }
+putGlobals :: GmGlobals -> GmState -> GmState
+putGlobals globals state = state { getGlobals = globals }
 
 putStats :: GmStats -> GmState -> GmState
 putStats stats state = state { getStats = stats }
@@ -91,9 +97,10 @@ data Instruction
   | Eval
   | Add | Sub | Mul | Div | Neg
   | Eq | Ne | Lt | Le | Gt | Ge
+  | And | Or
   | Cond GmCode GmCode
-  | Pack Int Int
-  | Casejump [(Int, GmCode)]
+  | Pack Tag Int
+  | Casejump [(Tag, GmCode)]
   | Split Int
   | Print
   deriving (Show, Eq)
@@ -101,9 +108,9 @@ data Instruction
 data Node
   = NNum Int
   | NAp Addr Addr
-  | NGlobal Int GmCode
+  | NGlobal Arity GmCode
   | NInd Addr
-  | NConstr Int [Addr]
+  | NConstr Tag [Addr]
   deriving Eq
 
 eval :: GmState -> [GmState]
@@ -145,6 +152,8 @@ dispatch Lt             = comparison (<)
 dispatch Le             = comparison (<=)
 dispatch Gt             = comparison (>)
 dispatch Ge             = comparison (>=)
+dispatch And            = boolean (||)
+dispatch Or             = boolean (&&)
 dispatch (Cond c1 c2)   = cond c1 c2
 dispatch (Pack t a)     = pack t a
 dispatch (Casejump cs)  = casejump cs
@@ -159,21 +168,24 @@ evalInstruction state@GmState{..} =
     stack = [head getStack]
     dump = (getCode, tail getStack) : getDump
 
-pack :: Int -> Int -> GmState -> GmState
+pack :: Tag -> Int -> GmState -> GmState
 pack tag arity state@GmState{..} = putHeap heap' $ putStack (a:stack') $ state
   where stack = getStack
         args = take arity stack
         stack' = drop arity stack
         (heap', a) = hAlloc getHeap (NConstr tag args)
 
-casejump :: [(Int, GmCode)] -> GmState -> GmState
+casejump :: [(Tag, GmCode)] -> GmState -> GmState
 casejump [] state = error "Non-exhaustive pattern matching in case statement"
 casejump ((tag, code):cs) state@GmState{..} =
-  let (a:_) = getStack
-      (NConstr constTag _constArgs) = hLookup getHeap a
-  in if tag == constTag
-        then putCode (code <> getCode) state
-        else casejump cs state
+  if tag == constTag
+    then putCode (code <> getCode) state
+    else casejump cs state
+  where
+    (a:_) = getStack
+    (NConstr constTag _constArgs) = case hLookup getHeap a of
+      x@(NConstr _ _) -> x
+      _ -> error "bad node"
 
 split :: Int -> GmState -> GmState
 split n state@GmState{..} =
@@ -186,10 +198,10 @@ split n state@GmState{..} =
 print' :: GmState -> GmState
 print' state@GmState{..} =
  case node of
-    (NNum n) -> putOutput (getOutput <> tshow n) $ putStack stack state
+    (NNum n) -> putOutput (getOutput <> tshow n <> " ") $ putStack stack state
     (NConstr tag args) ->
       let i' = concat $ replicate (length args) [Eval, Print]
-       in putOutput getOutput $
+       in putOutput (getOutput <> tag <> " ") $
           putCode (i' <> getCode) $
           putStack (args <> stack) $ state
     _ -> error "print'"
@@ -211,6 +223,13 @@ unboxInteger a state@GmState{..} =
   ub $ hLookup getHeap a
   where ub (NNum i) = i
         ub _ = error $ "Unboxing a non-integer"
+
+unboxBoolean :: Addr -> GmState -> Bool
+unboxBoolean a state@GmState{..} =
+  ub $ hLookup getHeap a
+  where ub (NConstr "False" []) = False
+        ub (NConstr "True" []) = True
+        ub _ = error $ "Unboxing a non-boolean"
 
 primitive1
   :: (b -> GmState -> GmState)
@@ -239,22 +258,23 @@ arithmetic2 = primitive2 boxInteger unboxInteger
 comparison :: (Int -> Int -> Bool) -> (GmState -> GmState)
 comparison = primitive2 boxBoolean unboxInteger
 
--- TODO: fix these up until MARK so they work on non-ints
+boolean :: (Bool -> Bool -> Bool) -> (GmState -> GmState)
+boolean = primitive2 boxBoolean unboxBoolean
+
 boxBoolean :: Bool -> GmState -> GmState
-boxBoolean b state = (putStack (a:getStack state)) . (putHeap heap') $ state
-  where (heap', a) = hAlloc (getHeap state) (NNum b')
-        b' | b         = 1
-           | otherwise = 0
+boxBoolean b state@GmState{..} = putStack (a:getStack) $ putHeap heap' state
+  where (heap', a) = hAlloc getHeap (NConstr b' [])
+        b' | b         = "True"
+           | otherwise = "False"
 
 cond :: GmCode -> GmCode -> GmState -> GmState
 cond i1 i2 state = (putStack stack') . (putCode (code' ++ getCode state)) $ state
   where (a:stack') = getStack state
         node = hLookup (getHeap state) a
         code' = case node of
-                     (NNum 1) -> i1
-                     (NNum 0) -> i2
-                     _        -> error "Non exhaustive case expression"
--- MARK
+                     (NConstr "True" _) -> i1
+                     (NConstr "False" _) -> i2
+                     _           -> error "Non exhaustive case expression"
 
 update :: Int -> GmState -> GmState
 update n state@GmState{..} =
@@ -265,6 +285,14 @@ update n state@GmState{..} =
     newHeap = hUpdate getHeap (as !! n) (NInd a)
 
 pushglobal :: Name -> GmState -> GmState
+pushglobal tag state@GmState{..}
+  | (isUpper $ T.head tag) && (Prelude.lookup tag getGlobals == Nothing) =
+      putGlobals newGlobals $ putStack (addr' : getStack) $ putHeap newHeap $ state
+  where newGlobals = (tag, addr') : getGlobals
+        (newHeap, addr') = hAlloc getHeap $ NGlobal arity [Pack tag arity, Update 0, Unwind]
+        arity = case Map.lookup tag getArities of
+          Nothing -> error $ "Missing arity for constructor: " <> T.unpack tag
+          Just x -> x
 pushglobal f state@GmState{..} =
   putStack (a : getStack) state
   where a = aLookup getGlobals f
@@ -353,9 +381,9 @@ allocNodes n heap = (heap2, a:as)
         (heap2, a) = hAlloc heap1 $ NInd hNull
         hNull = -1
 
-compile :: [(Name, [Name], Expr)] -> GmState
-compile program =
-  GmState "" initialCode [] [] heap globals statInitial
+compile :: Map Tag Arity -> [(Name, [Name], Expr)] -> GmState
+compile constructorArities program =
+  GmState "" initialCode [] [] heap globals statInitial constructorArities
   where (heap, globals) = buildInitialHeap program
 
 -- buildInitialHeap :: [(Name, [Name], Expr)] -> (GmHeap, GmGlobals)
@@ -422,7 +450,7 @@ compileE' :: Int -> GmCompiler
 compileE' offset expr args =
   [Split offset] <> compileE expr args <> [Slide offset]
 
-compileD :: (Int -> GmCompiler) -> [CaseAlternative Void] -> GmEnvironment -> [(Int, GmCode)]
+compileD :: (Int -> GmCompiler) -> [CaseAlternative Void] -> GmEnvironment -> [(Tag, GmCode)]
 compileD comp alts env
   = [(tag, comp (length names) body (zip names [0..] ++ argOffset (length names) env)) | (tag, names, body) <- alts]
 
@@ -437,15 +465,37 @@ type GmCompiler = Expr -> GmEnvironment -> GmCode
 
 type GmEnvironment = [(Name, Int)]
 
+-- compileC :: GmCompiler
+-- compileC (ExprVariable v) env
+--   | v `elem` map fst env = [Push n]
+--   | otherwise = [Pushglobal v]
+--   where n = aLookup env v
+-- compileC (ExprInt n) env = [Pushint $ fromIntegral n]
+-- compileC (ExprApplication e1 e2) env = compileC e2 env <> compileC e1 (argOffset 1 env) <> [Mkap]
+-- compileC (ExprLet name def e) env = compileLetRec compileC [(name, def)] e env
+-- compileC _ _ = error "compileC"
+
+
 compileC :: GmCompiler
-compileC (ExprVariable v) env
-  | v `elem` map fst env = [Push n]
-  | otherwise = [Pushglobal v]
-  where n = aLookup env v
-compileC (ExprInt n) env = [Pushint $ fromIntegral n]
-compileC (ExprApplication e1 e2) env = compileC e2 env <> compileC e1 (argOffset 1 env) <> [Mkap]
-compileC (ExprLet name def e) env = compileLetRec compileC [(name, def)] e env
-compileC _ _ = error "compileC"
+compileC (ExprVariable v) args
+    | v `elem` (aDomain args) = [Push n]
+    | otherwise               = [Pushglobal v]
+  where n = aLookup args v
+compileC (ExprInt n) args = [Pushint $ fromIntegral n]
+compileC (ExprApplication e1 e2) args = compileC e2 args ++
+                            compileC e1 (argOffset 1 args) ++
+                            [Mkap]
+compileC (ExprLet name def exp) args = compileLetRec compileC [(name,def)] exp args
+compileC (ExprConstructor tag arity) args = [Pushglobal $ toName tag]
+  where
+    toName :: Tag -> Name
+    toName tag = tag
+compileC e args = let (core, exps) = decompose e
+                   in case core of
+                           (ExprConstructor t a) -> concatMap (\(exp, offset) -> compileC exp (argOffset offset args))
+                                                     (zip (reverse exps) [0..])
+                                            ++ [Pack t a]
+                           _             -> error "Not implemented yet"
 
 compileLetRec :: GmCompiler -> [(Name, Expr)] -> GmCompiler
 compileLetRec comp defs exp env = [Alloc (length defs)] ++ compileLetRec' defs env' ++ comp exp env' ++ [Slide (length defs)]
@@ -474,6 +524,8 @@ compiledPrimitives =
   , ("<=", 2, [Push 1, Eval, Push 1, Eval, Le, Update 2, Pop 2, Unwind])
   , (">", 2, [Push 1, Eval, Push 1, Eval, Gt, Update 2, Pop 2, Unwind])
   , (">=", 2, [Push 1, Eval, Push 1, Eval, Ge, Update 2, Pop 2, Unwind])
+  , ("||", 2, [Push 1, Eval, Push 1, Eval, Or, Update 2, Pop 2, Unwind])
+  , ("&&", 2, [Push 1, Eval, Push 1, Eval, And, Update 2, Pop 2, Unwind])
   , ("if", 3, [Push 0, Eval, Cond [Push 1] [Push 2], Update 3, Pop 3, Unwind])
   ]
 

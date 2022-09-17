@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3480a188d488e01183da518e6c096185079ac2be70462f6689918e9d7d9207e3
+-- hash: 701d4fb2f5069cf5ba418227f60fb3f3337a669bcf0f5110c048be305b653bab
 
 name:           doldrums
 version:        0.1.0.0
@@ -32,7 +32,6 @@ library
       Language
       Lib
       Parse
-      TemplateInstantiation
       Typecheck
   other-modules:
       Paths_doldrums

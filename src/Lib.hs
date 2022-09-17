@@ -10,16 +10,15 @@ import Parse (parseProgram)
 import Typecheck
 import Language
 -- import Interpret
--- import TemplateInstantiation
 import GMachine
-
 import Control.Exception (catch)
 import Control.Monad (when)
 import Data.Foldable
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
+import Data.Map (Map)
 import qualified Data.Map as Map
-import System.Exit (exitFailure)
+-- import System.Exit (exitFailure)
 import Text.Megaparsec (parse, errorBundlePretty, SourcePos, sourceLine, sourceColumn, unPos)
 import qualified Data.Text as Text
 
@@ -54,21 +53,47 @@ debug isDebug label action = when isDebug $ do
   tprint $ "\n -- " <> label <> " -- "
   action
 
-lookupMain :: Program -> AnnotatedExpr SourcePos
+lookupMain :: [Function SourcePos] -> AnnotatedExpr SourcePos
 lookupMain [] = error "No main function is defined."
-lookupMain ((name, _, body):rest)
+lookupMain (Function name _ body:rest)
   | name == "main" = body
   | otherwise = lookupMain rest
 
-toLambda :: TopLevelDefn -> (Name, AnnotatedExpr SourcePos)
-toLambda (name, vars, expr) =
-  (name, Prelude.foldr (AnnExprLambda $ annotation expr) expr vars)
+toLambda :: Function SourcePos -> (Name, AnnotatedExpr SourcePos)
+toLambda (Function name args body) =
+  (name, Prelude.foldr (AnnExprLambda $ annotation body) body args)
 
-normalizeAST :: Program -> AnnotatedExpr SourcePos
-normalizeAST program = foldr (\(name, expr) -> AnnExprLet (annotation expr) name expr) (lookupMain program) lambdas
+normalizeAST :: Program SourcePos -> AnnotatedExpr SourcePos
+normalizeAST program = foldr (\(name, expr) -> AnnExprLet (annotation expr) name expr) (lookupMain $ functions program) lambdas
   where
-    withoutMain = filter ((\(name, _, _) -> name /= "main"))
-    lambdas = map toLambda $ withoutMain program
+    withoutMain = filter (\(Function name _ _) -> name /= "main")
+    lambdas = map toLambda . withoutMain $ functions program
+
+lookupTag :: [DataDeclaration] -> Tag -> Arity
+lookupTag [] tag = error $ "Could not find constructor: " <> show tag
+lookupTag (DataDeclaration [] : rest) tag = lookupTag rest tag
+lookupTag (DataDeclaration ((tagX, arity):xs) : rest) tag
+  | tag == tagX = arity
+  | otherwise = lookupTag (DataDeclaration xs : rest) tag
+
+fixExprArities :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
+fixExprArities _ e@(AnnExprVariable _ _) = e
+fixExprArities _ e@(AnnExprInt _ _) = e
+fixExprArities _ e@(AnnExprString _ _) = e
+fixExprArities _ e@(AnnExprBool _ _) = e
+fixExprArities _ e@(AnnExprDouble _ _) = e
+fixExprArities datas (AnnExprApplication a f x) = AnnExprApplication a (fixExprArities datas f) (fixExprArities datas x)
+fixExprArities datas (AnnExprLet a name binding body) = AnnExprLet a name (fixExprArities datas binding) (fixExprArities datas body)
+fixExprArities datas (AnnExprConstructor a tag _) = AnnExprConstructor a tag $ lookupTag datas tag
+fixExprArities datas (AnnExprLambda a name expr) = AnnExprLambda a name (fixExprArities datas expr)
+fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) alters
+
+fixFunctionArities :: [DataDeclaration] -> Function a -> Function a
+fixFunctionArities datas f@(Function _ _ body) =
+  f { body = fixExprArities datas body }
+
+fixArities :: Program a -> Program a
+fixArities (Program funcs datas) = Program (map (fixFunctionArities datas) funcs) datas
 
 runBase :: Text -> (Text -> IO a) -> Bool -> IO a
 runBase programText strat isDebug = do
@@ -81,55 +106,58 @@ runBase programText strat isDebug = do
 
       case parse parseProgram "" programText of
         Left e -> error $ errorBundlePretty e
-        Right unnormalizedProgram -> do
+        Right unnormalizedBadAritiesProgram -> do
+          -- TODO: could instead do two parsing passes and check this at parse time
+          let prelude = fixArities unnormalizedBadAritiesProgram
+          let unnormalizedProgram = fixArities unnormalizedBadAritiesProgram
           let program = normalizeAST unnormalizedProgram
           debug isDebug "AST" $ print $ fmap (const void) program
 
           debug isDebug "GRAPHVIZ" . putStrLn . unpack $ toGraphviz $ fmap (const void) program
 
-          let typecheckingFailureHandler (TypeCheckingException sourcePos msg) = do
-                putStrLn $ fold
-                  [ "Typechecking failed at "
-                  , show . unPos $ sourceLine sourcePos
-                  , ":"
-                  , show . unPos $ sourceColumn sourcePos
-                  , " in the expression"
-                  ]
-                let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
-                putStrLn $ line <> "v"
-                tprint $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
-                putStrLn $ line <> "^"
-                tprint msg
-                exitFailure
-          (types, state) <- typeInference program `catch` typecheckingFailureHandler
+          (types, state) <- typeInference program `catch` typecheckingFailureHandler programText
           debug isDebug "TYPE" $ do
-            putStrLn $ "main : " <> (show $ (\(Right x) -> x) types)
+            let toText (Right x) = pack $ show x
+                toText (Left x) = x
+            tprint $ "main : " <> toText types
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
-          -- many different interpreters/compilers exist with different properties
+          -- an interpreter and a compiler, with different properties
           --   1. strict lambda calculus interpreter that just walks the AST
-          --   2. lazy template instantiation interpreter
-          --   3. G-machine
-          -- TODO: compile to LLVM
+          --   2. G-machine
+          --   TODO: compile to LLVM
+
 
           -- lambda calculus interpreter (strict) --
           -- debug isDebug "OUTPUT" $ pure ()
           -- let program = normalizeAST $ prelude <> unnormalizedProgram
           -- strat . interpret $ const void <$> program
 
-          -- template instantiation --
-          -- let !state = toInitialState prelude unnormalizedProgram
-          -- debug isDebug "STATE" $ print state
-
-          -- let !evaluated = eval state
-          -- debug isDebug "EVALUATION" . tprint $ showResults evaluated
-
-          -- debug isDebug "OUTPUT" $ pure ()
-          -- strat $ showFinalResults evaluated
-
           -- G machine --
-          debug isDebug "EVALUATION" . tprint $ gMachine $ map (\(a, b, c) -> (a, b, const void <$> c)) (prelude <> unnormalizedProgram)
-
+          let
+            toPlainExprs :: [Function SourcePos] -> [(Name, [Name], Expr)]
+            toPlainExprs = map (\(Function name args body) ->
+              (name, args, const void <$> body))
+            constructorArities :: Map Tag Arity
+            constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations (prelude <> unnormalizedProgram)
+          debug isDebug "EVALUATION" . tprint $ gMachine constructorArities $ toPlainExprs $ functions (prelude <> unnormalizedProgram)
           debug isDebug "OUTPUT" $ pure ()
-          strat . gMachineOutput $ map (\(a, b, c) -> (a, b, const void <$> c)) (prelude <> unnormalizedProgram)
+          strat . gMachineOutput constructorArities $ toPlainExprs $ functions (prelude <> unnormalizedProgram)
+
+typecheckingFailureHandler :: Text -> TypeCheckingException -> IO (Either Text Type, TypeInstantiationState)
+typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = do
+  putStrLn $ fold
+    [ "Typechecking failed at "
+    , show . unPos $ sourceLine sourcePos
+    , ":"
+    , show . unPos $ sourceColumn sourcePos
+    , " in the expression"
+    ]
+  let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
+  putStrLn $ line <> "v"
+  tprint $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
+  putStrLn $ line <> "^"
+  tprint msg
+  pure $ (Left "typechecking failed", TypeInstantiationState 0 Map.empty)
+  -- exitFailure -- TODO: uncomment this once the typechecker is good

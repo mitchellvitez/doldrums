@@ -120,7 +120,7 @@ main = hspec $ do
       testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
       testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
 
-    fit "parseExprCase" $ do
+    it "parseExprCase" $ do
       testParser parseExprCase "case c of 1 -> 2, 2 -> 3" (ExprCase (ExprVariable "c") [(1, [], ExprInt 2), (2, [], ExprInt 3)])
 
     it "parseExprLambda" $ do

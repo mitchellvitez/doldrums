@@ -21,32 +21,44 @@ lexeme = L.lexeme spaceConsumer
 -- TODO: replace Void with a better error handling mechanism
 type Parser = Parsec Void Text
 
-parseProgram :: Parser Program
+parseProgram :: Parser (Program SourcePos)
 parseProgram = do
   spaceConsumer
-  some parseTopLevelDefn
+  topLevels <- parseTopLevel `endBy1` lexeme (char ';')
+  pure $ accumTopLevels topLevels $ Program [] []
 
--- TODO: get significant whitespace working
--- parseTopLevelDefn :: Parser TopLevelDefn
--- parseTopLevelDefn = do
---   L.indentBlock spaceConsumer indentedBlock
---   where
---     indentedBlock = do
---       name <- parseName
---       vars <- many parseName
---       lexeme $ char '='
---       pure $ L.IndentMany Nothing (exprsToBlock name vars) (spaceConsumer >> parseAnnotatedExpr)
---     exprsToBlock name vars [body] = pure (name, vars, body)
---     exprsToBlock name vars x = fail $ "More than one body in top-level definition: " <> show x
+  where
+    accumTopLevels :: [Either (Function SourcePos) DataDeclaration] -> Program SourcePos -> Program SourcePos
+    accumTopLevels [] x = x
+    accumTopLevels (Left function : rest) program = accumTopLevels rest
+      program { functions = function : functions program }
+    accumTopLevels (Right dataDeclaration : rest) program = accumTopLevels rest
+      program { dataDeclarations = dataDeclaration : dataDeclarations program }
 
-parseTopLevelDefn :: Parser TopLevelDefn
-parseTopLevelDefn = do
+parseTopLevel :: Parser (Either (Function SourcePos) DataDeclaration)
+parseTopLevel =
+  try (Right <$> parseDataDeclaration) <|>
+  (Left <$> parseFunction)
+
+parseFunction :: Parser (Function SourcePos)
+parseFunction = do
   name <- parseName
-  vars <- many parseName
+  args <- many parseName
   lexeme $ char '='
   body <- parseAnnotatedExpr
-  lexeme $ char ';'
-  pure $ (name, vars, body)
+  pure $ Function name args body
+
+parseDataDeclaration :: Parser DataDeclaration
+parseDataDeclaration = do
+  lexeme $ string "data"
+  constructors <- parseConstructorDeclaration `sepBy1` lexeme (char '|')
+  pure $ DataDeclaration constructors
+
+parseConstructorDeclaration :: Parser (Tag, Arity)
+parseConstructorDeclaration = do
+  tag <- parseCaseName
+  arity <- parseInt
+  pure (tag, arity)
 
 parseAnnotatedExpr :: Parser (AnnotatedExpr SourcePos)
 parseAnnotatedExpr = do
@@ -122,19 +134,14 @@ prefixOpAST name expr = ExprApplication (ExprVariable name) expr
 parseExprLiteral :: Parser Expr
 parseExprLiteral =
   try (ExprDouble <$> parseDouble) <|>
-  ExprInt <$> parseInt   <|>
-  ExprBool  <$> parseBool    <|>
-  ExprString <$> parseString
+  ExprInt <$> parseInt             <|>
+  ExprString <$> parseString       <|>
+  parseExprConstructor
 
 parseExprConstructor :: Parser Expr
 parseExprConstructor = do
-  lexeme $ string "Pack"
-  lexeme $ char '{'
-  tag <- parseInt
-  lexeme $ char ','
-  arity <- parseInt
-  lexeme $ char '}'
-  pure $ ExprConstructor tag arity
+  tag <- parseCaseName
+  pure $ ExprConstructor tag (-1);
 
 parseExprLet :: Parser Expr
 parseExprLet = do
@@ -152,13 +159,13 @@ parseExprCase = do
   alternatives <- parseCaseAlternative `sepBy1` lexeme (char ',')
   pure $ ExprCase scrutinee alternatives
 
-parseCaseAlternative :: Parser (Int, [Name], Expr)
+parseCaseAlternative :: Parser (Tag, [Name], Expr)
 parseCaseAlternative = do
-  caseNum <- parseInt
+  caseName <- parseCaseName
   names <- many parseName
   lexeme $ string "->"
   expr <- parseExpr
-  pure (caseNum, names, expr)
+  pure (caseName, names, expr)
 
 parseDefinition :: Parser (Name, Expr)
 parseDefinition = do
@@ -203,20 +210,19 @@ parseInt = lexeme L.decimal
 parseDouble :: Parser Double
 parseDouble = lexeme L.float
 
-parseBool :: Parser Bool
-parseBool = do
-  s <- lexeme (string "True") <|> lexeme (string "False")
-  case s of
-    "True" -> pure True
-    "False" -> pure False
-    _ -> fail "Couldn't parse bool"
-
 parseString :: Parser Text
 parseString = lexeme $ char '"' >> pack <$> manyTill L.charLiteral (char '"')
 
+parseCaseName :: Parser Tag
+parseCaseName = lexeme $ try $ do
+  first <- upperChar
+  rest <- many parseNameChar
+  pure $ pack (first : rest)
+  -- can't be a keyword due to first upperChar
+
 parseName :: Parser Name
 parseName = lexeme $ try $ do
-  first <- letterChar
+  first <- lowerChar
   rest <- many parseNameChar
   let name = pack (first : rest)
   if name `Set.member` keywords
@@ -227,7 +233,8 @@ parseNameChar :: Parser Char
 parseNameChar =
   letterChar <|>
   digitChar  <|>
-  char '_'
+  char '_'   <|>
+  char '\''
 
 keywords :: Set Text
-keywords = Set.fromList ["let", "in", "of", "Pack", "True", "False"]
+keywords = Set.fromList ["let", "in", "case", "of", "data"]

@@ -14,30 +14,31 @@ import Data.Text (Text)
 import Data.Void
 import Text.Megaparsec (SourcePos)
 
--- a Program is a list of top-level definitions
-type Program = [TopLevelDefn]
+data Program a = Program
+  { functions :: [Function a]
+  , dataDeclarations :: [DataDeclaration]
+  }
+
+instance Semigroup (Program a) where
+  Program f1 d1 <> Program f2 d2 = Program (f1 <> f2) (d1 <> d2)
+
+-- tag, arity
+-- Just, 1
+-- TODO: check that there aren't two constructors in the same program with the same Tag (Tags should be unique)
+newtype DataDeclaration = DataDeclaration { unDataDeclaration :: [(Tag, Arity)] }
 
 -- name, list of arguments, body
-type TopLevelDefn = (Name, [Name], AnnotatedExpr SourcePos)
+data Function a = Function
+  { name :: Name
+  , args :: [Name]
+  , body :: AnnotatedExpr a
+  }
 
--- case expr of alts
--- alt ::= <num> var1...varN -> expr,
---
--- case mInt of
---   Nothing -> 0
---   Just x -> x
---
--- case mInt of
---   0 -> 0,
---   1 x -> x
---
--- case myBool of
---   0 -> "false",
---   1 -> "true"
-type CaseAlternative a = (Int, [Name], AnnotatedExpr a)
+-- case name, variables to unpack, body
+type CaseAlternative a = (Tag, [Name], AnnotatedExpr a)
 
 type Name = Text
-type Tag = Int
+type Tag = Text
 type Arity = Int
 
 data AnnotatedExpr a
@@ -65,6 +66,7 @@ annotation (AnnExprLet annot _ _ _)       = annot
 annotation (AnnExprLambda annot _ _)      = annot
 annotation (AnnExprCase annot _ _)        = annot
 
+-- TODO: make this a Bifunctor instead
 instance Functor AnnotatedExpr where
   fmap f (AnnExprInt a n) = AnnExprInt (f a) n
   fmap f (AnnExprVariable a name) = AnnExprVariable (f a) name
@@ -104,7 +106,7 @@ instance Show Expr where
   show (ExprBool b) = show b
   show (ExprString s) = show s
   show (ExprDouble d) = show d
-  show (ExprConstructor tag arity) = "Pack{" <> show tag <> "," <> show arity <> "}"
+  show (ExprConstructor tag arity) = "(Constr " <> show tag <> "," <> show arity <> ")"
   show (ExprApplication a b) = "(App " <> show a <> " " <> show b <> ")"
   show (ExprLet name a b) = "(Let " <> show name <> " " <> show a <> " " <> show b <> ")"
   show (ExprLambda name expr) = "(Lam " <> show name <> " " <> show expr <> ")"

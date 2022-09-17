@@ -84,7 +84,7 @@ exprToGraphviz (AnnExprBool n b) = node n $ tshow b
 exprToGraphviz (AnnExprString n s) = node n $ tshow s
 exprToGraphviz (AnnExprDouble n d) = node n $ tshow d
 exprToGraphviz (AnnExprConstructor n t a) =
-  node n $ tshow $ "Pack{" <> tshow t <> "," <> tshow a <> "}"
+  node n t
 exprToGraphviz (AnnExprVariable n v) = node n v
 exprToGraphviz (AnnExprApplication n f x) = fold
   [ node n "App"

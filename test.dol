@@ -1,29 +1,64 @@
-/* three = if (2 == 3 || 3 < 4) 3 7; */
-/* four = ((1 + 6 - 2) * 4) / 5; */
+three = if (2 == 3 || 3 < 4) 3 7;
+four = ((1 + 6 - 2) * 4) / 5;
 
-/* pair x y f = f x y; */
-/* fst p = p K; */
-/* snd p = p K1; */
-/* id x = x; */
+data Pair 2;
+fst p = case p of Pair a b -> a;
+snd p = case p of Pair a b -> b;
+id x = x;
 
-/* f x y = id $ snd $ pair x y; */
+f x y = Pair x y;
 
-/* main = */
-/*   f three (id four); */
+main =
+  f three (id four);
 
 /* twice f x = f (f x); */
 /* id x = x; */
 /* main = fac 4; */
 
-/* main = fac 3; */
+
+/* main = fac $ 5 + 1; */
 /* fac n = if (n == 0) 1 (n * fac (n-1)); */
 
-iff c t f = case c of 1 -> f, 2 -> t;
 
-main = iff (1 < 2) 3 4;
+/* main = iff (1 < 2) 3 4; */
 
--- try this test case for parsing
-/* f x y = case x of */
-/*   1 -> case y of */
-/*     1 -> 1, */
-/*   2 -> 2; */
+/* -- Bool */
+/* data True 0 | False 0; */
+
+/* myIf c t f = case c of */
+/*   True -> t, */
+/*   False -> f; */
+
+/* main = myIf (1 < 2) 234 14; */
+
+
+/* second p = case p of Pair a b -> b; */
+
+-- List
+/* data Nil 0 | Cons 2; */
+
+/* length list = case list of */
+/*   Nil -> 0, */
+/*   Cons x xs -> 1 + length xs; */
+
+/* main = length $ Cons 1 $ Cons 2 Nil; */
+
+-- Maybe
+/* data Nothing 0 | Just 1; */
+
+/* withDefault maybe default = case maybe of */
+/*   Nothing -> default, */
+/*   Just x -> x; */
+
+/* main = withDefault Nothing 7; */
+
+
+
+
+/* data Pair 2; */
+
+/* first p = case p of Pair a b -> a; */
+/* second p = case p of Pair a b -> b; */
+
+/* main = second $ Pair 5 6; */
+

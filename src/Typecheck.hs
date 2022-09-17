@@ -5,6 +5,7 @@ module Typecheck
   ( typeInference
   , TypeCheckingException(..)
   , TypeInstantiationState(..)
+  , Type
   )
 where
 
@@ -28,13 +29,12 @@ import Data.Text (Text, pack)
 -- main = fac 3;
 -- fac n = if (n == 0) 1 (n * fac (n-1));
 
-
 data Type
   = Bool
   | Int
   | Double
   | String
-  | Constructor
+  | Constructor Arity
   | Type :-> Type
   | TypeVariable Name
   deriving (Eq, Show, Generic, NFData)
@@ -85,7 +85,7 @@ instance Types Type where
   freeTypeVariable Bool = Set.empty
   freeTypeVariable String = Set.empty
   freeTypeVariable Double = Set.empty
-  freeTypeVariable Constructor = Set.empty
+  freeTypeVariable (Constructor _) = Set.empty
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
@@ -170,7 +170,8 @@ typeCheckExpr _ (AnnExprInt _ _) = pure (emptySubstitution, Int)
 typeCheckExpr _ (AnnExprBool _ _) = pure (emptySubstitution, Bool)
 typeCheckExpr _ (AnnExprString _ _) = pure (emptySubstitution, String)
 typeCheckExpr _ (AnnExprDouble _ _) = pure (emptySubstitution, Double)
-typeCheckExpr _ (AnnExprConstructor _ _ _) = pure (emptySubstitution, Constructor)
+-- TODO: Constructor should return a function type (a -> b -> Constructor) according to its arity.
+typeCheckExpr _ (AnnExprConstructor _ _ arity) = pure (emptySubstitution, Constructor arity)
 typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
   case Map.lookup name env of
     Nothing ->
@@ -199,7 +200,7 @@ typeCheckExpr env (AnnExprLet _ name expr1 expr2) = do
   (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
   pure (subs1 `combineSubstitutions` subs2, type2)
 typeCheckExpr env (AnnExprCase _ expr alts) = do
-  typeCheckExpr env expr -- TODO: also check the alts for type correctness
+  typeCheckExpr env expr -- TODO: typecheck cases properly (all results should unify, overal type should be type of each alter)
   -- (subs1, type1) <- typeCheckExpr env expr
   -- let TypeEnv env1 = remove env name
   --     generalizedType = generalize (apply subs1 env) type1
