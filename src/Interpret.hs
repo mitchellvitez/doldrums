@@ -18,7 +18,7 @@ unpackExpr :: Expr -> Text
 unpackExpr (ExprInt n) = tshow n
 unpackExpr (ExprString s) = tshow s
 unpackExpr (ExprDouble d) = tshow d
-unpackExpr (ExprConstructor tag arity) = "Pack{" <> tshow tag <> ", " <> tshow arity <> "}"
+unpackExpr (ExprConstructor tag arity) = tshow tag
 unpackExpr x = "Incomplete evaluation: " <> tshow x
 
 type Env = Map Name Expr

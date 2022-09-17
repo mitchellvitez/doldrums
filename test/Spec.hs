@@ -15,8 +15,6 @@ import Test.Hspec
 import Text.Megaparsec
 import Text.RawString.QQ (r)
 
--- TODO: fix all `xit`s in this file
-
 testParser :: (Show a, Eq a) => Parser a -> Text -> a -> Expectation
 testParser parser input output =
   parse parser "" input `shouldBe` Right output
@@ -43,10 +41,10 @@ testProgramException programText = do
 main :: IO ()
 main = hspec $ do
   describe "typechecking" $ do
-    xit "num plus string - parses" $ do
+    it "num plus string - parses" $ do
       testProgramParser parseProgram "main = 1 + \"hello\";" (Program [Function "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
 
-    xit "num plus string" $ do
+    it "num plus string" $ do
       testProgramException "main = 1 + \"hello\";"
 
   describe "program output" $ do
@@ -56,11 +54,11 @@ main = hspec $ do
     it "negation" $ do
       testProgram "-3" "main = negate 3;"
 
-    xit "indirection" $ do
-      testProgram "-3" "main = negate (I 3);"
+    it "indirection" $ do
+      testProgram "-3" "main = negate (id 3);"
 
-    xit "double negation" $ do
-      testProgram "3" "main = twice negate 3;"
+    it "double negation" $ do
+      testProgram "3" "twice f = compose f f; main = twice negate 3;"
 
     it "explicit double negation" $ do
       testProgram "3" "main = negate (negate 3);"
@@ -69,16 +67,39 @@ main = hspec $ do
       testProgram "3" "main = negate $ negate 3;"
 
     it "more complex program" $ do
-      testProgram  "64""id x = x;\nf p = (id p) * p;\ndouble n = let b = 2 in n * b;\nmain = f (double 4);"
+      testProgram  "64" [r|
+id x = x;
+f p = (id p) * p;
+double n = let b = 2 in n * b;
+main = f (double 4);
+|]
 
-    xit "regression test for recursive let and arithmetic ops" $ do
-      testProgram "4" "three = 3;\nfour = ((1 + 6 - 2) * 4) / 5;\n\npair x y f = f x y;\nfst p = p K;\nsnd p = p K1;\nf x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)));main = f three four;"
+    it "composition" $ do
+      testProgram  "64" [r|
+add1 x = x + 1;
+times2 x = x * 2;
+math = compose add1 times2;
+main = math 5;
+|]
 
-    xit "recursive functions like factorial" $ do
-      testProgram "6" "fac n = if (n == 0) 1 (n * fac (n-1)); main = fac 3;"
+    it "regression test for recursive let and arithmetic ops" $ do
+      testProgram "4" [r|
+three = 3;
+four = ((1 + 6 - 2) * 4) / 5;
 
-    xit "mutually recursive functions" $ do
-      testProgram "1" "f n = if (n == 0) 1 (g (n - 1)); g n = f (n - 1); main = f 3;"
+pair x y f = f x y;
+fst p = p const;
+snd p = p const1;
+f x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)));
+main = f three four;
+|]
+    it "lazy let" $ do
+      testProgram "7" [r|
+main = let d = e, a = b, c = d, e = f, b = c in f;
+|]
+
+    it "mutually recursive functions" $ do
+      testProgram "1" "f n = if (n < 0) n (g (n - 1)); g n = f (n - 1); main = f 3;"
 
     it "any top-level order" $ do
       testProgram "7" "main = b; b = c; a = 7; c = a;"
@@ -128,26 +149,20 @@ main = negate $ negate 3;
       testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
       testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
 
-    -- it "parseExprCase" $ do
-    --   testParser parseExprCase "case c of 1 -> 2, 2 -> 3" (ExprCase (ExprVariable "c") [("False", [], ExprInt 2), ("True", [], ExprInt 3)])
-
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x. x" (ExprLambda "x" (ExprVariable "x"))
 
-    -- it "parseTopLevelDefn" $ do
-    --   testTopLevelDefnParser parseTopLevelDefn "id x = x;" ("id", ["x"], ExprVariable "x")
-
-    xit "parseProgram" $ do
+    it "parseProgram" $ do
       testProgramParser parseProgram [r|
 id x = x;
 main = id 2;
 |]
         (Program [Function "id"  ["x"] (ExprVariable "x"), Function "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
 
-    xit "parseExprApplication" $ do
+    it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
 
-    xit "parses a simple doubling program" $ do
+    it "parses a simple doubling program" $ do
       testProgramParser parseProgram [r|
 main = double 21;
 double x = x + x;
@@ -156,7 +171,7 @@ double x = x + x;
         , Function "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
         ] [])
 
-    xit "parses a program with many functions" $ do
+    it "parses a program with many functions" $ do
       testProgramParser parseProgram [r|
 id x = x;
 f p = (id p) * p;
@@ -235,4 +250,15 @@ withDefault maybe default = case maybe of
   Just x -> x;
 
 main = withDefault Nothing 7 + withDefault (Just 2) 4;
+|]
+
+    it "negative numbers self-recursion" $ do
+      testProgram "-6" [r|
+g n = if (n < negate 5) n $ g (n - 1);
+main = g 3;
+|]
+
+    it "negative numbers" $ do
+      testProgram "-6" [r|
+main = 20 - 14;
 |]

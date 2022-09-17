@@ -2,6 +2,7 @@ module Lib
  ( run
  , runDebug
  , runTest
+ , typecheckingFailureHandler
  )
 where
 
@@ -18,18 +19,18 @@ import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
 import Data.Map (Map)
 import qualified Data.Map as Map
--- import System.Exit (exitFailure)
+import System.Exit (exitFailure)
 import Text.Megaparsec (parse, errorBundlePretty, SourcePos, sourceLine, sourceColumn, unPos)
 import qualified Data.Text as Text
 
-tprint :: Text -> IO ()
-tprint = putStrLn . unpack
+putTextLn :: Text -> IO ()
+putTextLn = putStrLn . unpack
 
 -- | Prints its output
 run :: IO ()
 run = do
   programText <- getFileText
-  runBase programText tprint False
+  runBase programText putTextLn False
 
 -- | Returns its output, rather than printing via side effect
 runTest :: Text -> IO Text
@@ -39,7 +40,7 @@ runTest programText = runBase programText pure False
 runDebug :: IO ()
 runDebug = do
   programText <- getFileText
-  runBase programText tprint True
+  runBase programText putTextLn True
 
 getFileText :: IO Text
 getFileText = do
@@ -50,7 +51,7 @@ getFileText = do
 
 debug :: Bool -> Text -> IO () -> IO ()
 debug isDebug label action = when isDebug $ do
-  tprint $ "\n -- " <> label <> " -- "
+  putTextLn $ "\n -- " <> label <> " -- "
   action
 
 lookupMain :: [Function SourcePos] -> AnnotatedExpr SourcePos
@@ -101,24 +102,24 @@ runBase programText strat isDebug = do
     Left e -> error $ errorBundlePretty e
     Right prelude -> do
 
-      debug isDebug "INPUT" $ mapM_ tprint $ Text.lines programText
+      debug isDebug "INPUT" . mapM_ putTextLn $ Text.lines programText
 
       case parse parseProgram "" programText of
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
           -- TODO: could instead do two parsing passes and check this at parse time
-          let prelude = fixArities unnormalizedBadAritiesProgram
-          let unnormalizedProgram = fixArities unnormalizedBadAritiesProgram
+          -- let prelude = fixArities unnormalizedBadAritiesProgram
+          let unnormalizedProgram = fixArities (prelude <> unnormalizedBadAritiesProgram)
           let program = normalizeAST unnormalizedProgram
-          debug isDebug "AST" $ print $ fmap (const void) program
+          debug isDebug "AST" . print $ annotatedToExpr program
 
-          debug isDebug "GRAPHVIZ" . putStrLn . unpack $ toGraphviz $ fmap (const void) program
+          debug isDebug "GRAPHVIZ" . putStrLn . unpack . toGraphviz $ annotatedToExpr program
 
           (types, state) <- typeInference program `catch` typecheckingFailureHandler programText
           debug isDebug "TYPE" $ do
             let toText (Right x) = pack $ show x
                 toText (Left x) = x
-            tprint $ "main : " <> toText types
+            putTextLn $ "main : " <> toText types
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
@@ -136,12 +137,13 @@ runBase programText strat isDebug = do
           -- G machine --
           let
             toPlainExprs :: [Function SourcePos] -> [(Name, [Name], Expr)]
-            toPlainExprs = map (\(Function name args body) ->
-              (name, args, const void <$> body))
+            toPlainExprs = map (\(Function name args body) -> (name, args, annotatedToExpr body))
+
             constructorArities :: Map Tag Arity
-            constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations (prelude <> unnormalizedProgram)
-          let result = gMachineCore constructorArities $ toPlainExprs $ functions (prelude <> unnormalizedProgram)
-          -- debug isDebug "EVALUATION" . tprint $ gMachineEval result
+            constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations unnormalizedProgram
+          let result = gMachineCore constructorArities $ toPlainExprs $ functions unnormalizedProgram
+          debug isDebug "EVALUATION" . putTextLn $ gMachineEval result
+          -- debug isDebug "COMPILED" . putTextLn $ gMachineEval result
           debug isDebug "OUTPUT" $ pure ()
           strat $ gMachineOutput result
 
@@ -156,8 +158,8 @@ typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = d
     ]
   let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
   putStrLn $ line <> "v"
-  tprint $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
+  putTextLn $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
   putStrLn $ line <> "^"
-  tprint msg
+  putTextLn msg
   pure $ (Left "typechecking failed", TypeInstantiationState 0 Map.empty)
-  -- exitFailure -- comment this out to treat typechecking as a warning
+  exitFailure -- comment this out to treat typechecking as a warning

@@ -119,11 +119,8 @@ data Node
   deriving Eq
 
 eval :: GmState -> [GmState]
-eval state = state : restStates
+eval state = state : if gmFinal state then [] else eval nextState
   where
-    restStates
-      | gmFinal state = []
-      | otherwise = eval nextState
     nextState = doAdmin $ step state
 
 doAdmin s@GmState{..} = putStats (statIncSteps getStats) s
@@ -355,30 +352,6 @@ unwind state = newState (hLookup heap a)
                                           in (putStack stack') . (putCode c) $ state
         newState (NInd a')     = (putCode [Unwind]) . (putStack (a':as)) $ state
 
--- TODO: 3.29
--- unwind :: GmState -> GmState
--- unwind state@GmState{..} =
---   newState $ hLookup getHeap a
---   where (a:as) = getStack
---         newState (NNum n) = if null getDump then state else
---           let ((code', stack'):ds) = getDump
---            in putDump ds $ putCode code' $ putStack (a:stack') $ state
---         newState (NAp a1 a2) = putCode [Unwind] $ putStack (a1:a:as) state
---         newState (NGlobal n c)
---           | length as < n = error "Unwinding with too few arguments"
---           | otherwise = putStack stack' $ putCode c state
---               where stack' = rearrange n getHeap getStack
---         newState (NConstr n as) =
---           if null getDump
---             then state
---             else let ((code', stack'):ds) = getDump
---                   in putDump ds $ putCode code' $ putStack (a:stack') state
---         newState (NInd addr) =
---           putStack (a:s) state
---           where
---             (a0:s) = getStack
---             (NInd a) = hLookup getHeap a0
-
 rearrange :: Int -> GmHeap -> GmStack -> GmStack
 rearrange n heap as =
   take n as' ++ drop n as
@@ -402,12 +375,6 @@ compile constructorArities program =
   GmState "" initialCode [] [] heap globals statInitial constructorArities
   where (heap, globals) = buildInitialHeap program
 
--- buildInitialHeap :: [(Name, [Name], Expr)] -> (GmHeap, GmGlobals)
--- buildInitialHeap program =
---   mapAccumL allocatePrim compiledPrimitives $
---   mapAccumL allocateSc hInitial compiled
---   where compiled = map compileSc program
-
 buildInitialHeap :: [(Name, [Name], Expr)] -> (GmHeap, GmEnvironment)
 buildInitialHeap = flip (foldr allocatePrim) compiledPrimitives . foldr allocateSc (hInitial, []) . (map compileSc)
 
@@ -420,11 +387,6 @@ allocatePrim (name, nargs, instructions) (heap, env) = (heap', (name, addr):env)
   where (heap', addr) = hAlloc heap (NGlobal nargs instructions)
 
 type GmCompiledSC = (Name, Int, GmCode)
-
--- allocateSc :: GmHeap -> GmCompiledSC -> (GmHeap, (Name, Addr))
--- allocateSc heap (name, nargs, instns) =
---   (heap', (name, addr))
---   where (heap', addr) = hAlloc heap $ NGlobal nargs instns
 
 initialCode :: GmCode
 initialCode = [Pushglobal "main", Eval, Print]
@@ -480,17 +442,6 @@ decompose e = decompose' e []
 type GmCompiler = Expr -> GmEnvironment -> GmCode
 
 type GmEnvironment = [(Name, Int)]
-
--- compileC :: GmCompiler
--- compileC (ExprVariable v) env
---   | v `elem` map fst env = [Push n]
---   | otherwise = [Pushglobal v]
---   where n = aLookup env v
--- compileC (ExprInt n) env = [Pushint $ fromIntegral n]
--- compileC (ExprApplication e1 e2) env = compileC e2 env <> compileC e1 (argOffset 1 env) <> [Mkap]
--- compileC (ExprLet name def e) env = compileLetRec compileC [(name, def)] e env
--- compileC _ _ = error "compileC"
-
 
 compileC :: GmCompiler
 compileC (ExprVariable v) args

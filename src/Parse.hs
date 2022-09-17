@@ -24,13 +24,14 @@ parseProgram :: Parser (Program SourcePos)
 parseProgram = do
   spaceConsumer
   topLevels <- parseTopLevel `endBy1` lexeme (char ';')
-  pure $ accumTopLevels topLevels $ Program [] []
+  pure $ reversals $ accumTopLevels topLevels $ Program [] []
   where
     accumTopLevels [] x = x
     accumTopLevels (Func function : rest) program = accumTopLevels rest
       program { functions = function : functions program }
     accumTopLevels (Decl dataDeclaration : rest) program = accumTopLevels rest
       program { dataDeclarations = dataDeclaration : dataDeclarations program }
+    reversals (Program f d) = Program (Prelude.reverse f) (Prelude.reverse d)
 
 data TopLevel a = Decl DataDeclaration | Func (Function a)
 

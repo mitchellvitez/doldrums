@@ -30,11 +30,10 @@ import Data.Text (Text, pack)
 -- fac n = if (n == 0) 1 (n * fac (n-1));
 
 data Type
-  = Bool
-  | Int
+  = Int
   | Double
   | String
-  | Constructor Arity
+  -- | Constructor Name -- TODO
   | Type :-> Type
   | TypeVariable Name
   deriving (Eq, Show, Generic, NFData)
@@ -82,10 +81,9 @@ instance Types TypeEnv where
 instance Types Type where
   freeTypeVariable (TypeVariable name) = Set.singleton name
   freeTypeVariable Int = Set.empty
-  freeTypeVariable Bool = Set.empty
   freeTypeVariable String = Set.empty
   freeTypeVariable Double = Set.empty
-  freeTypeVariable (Constructor _) = Set.empty
+  -- freeTypeVariable (Constructor _ _) = Set.empty
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
@@ -144,7 +142,10 @@ unify sourcePos (a1 :-> b1) (a2 :-> b2) = do
 unify sourcePos (TypeVariable u) t = varBind sourcePos u t
 unify sourcePos t (TypeVariable u) = varBind sourcePos u t
 unify _ Int Int = pure emptySubstitution
-unify _ Bool Bool = pure emptySubstitution
+-- unify sourcePos (Constructor name1) (Constructor name2)
+--   | name1 == name2 = pure emptySubstitution
+--   | otherwise = throw . TypeCheckingException sourcePos $
+--     "Type mismatch: " <> tag1 <> " does not match " <> tag2
 unify _ String String = pure emptySubstitution
 unify _ Double Double = pure emptySubstitution
 unify sourcePos a b = throw . TypeCheckingException sourcePos $ fold
@@ -169,8 +170,18 @@ typeCheckExpr :: TypeEnv -> AnnotatedExpr SourcePos -> TypeInstantiation (Substi
 typeCheckExpr _ (AnnExprInt _ _) = pure (emptySubstitution, Int)
 typeCheckExpr _ (AnnExprString _ _) = pure (emptySubstitution, String)
 typeCheckExpr _ (AnnExprDouble _ _) = pure (emptySubstitution, Double)
--- TODO: Constructor should return a function type (a -> b -> Constructor) according to its arity.
-typeCheckExpr _ (AnnExprConstructor _ _ arity) = pure (emptySubstitution, Constructor arity)
+typeCheckExpr _ (AnnExprConstructor _ _ arity) = do
+  ty <- type_ arity
+  pure (emptySubstitution, ty)
+  where
+    type_ :: Int -> TypeInstantiation Type
+    type_ 0 = do
+      typeVar <- newTypeVar "a"
+      pure typeVar
+    type_ n = do
+      typeVar <- newTypeVar "a"
+      recursedType <- type_ $ n - 1
+      pure $ typeVar :-> recursedType
 typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
   case Map.lookup name env of
     Nothing ->
@@ -220,22 +231,27 @@ typeInference program =
 -- TODO: add primitiveTypes for all primitive operators as well as everything in Prelude.dol
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
+  -- prim25 = "Bool" for now
   [ ("+", Int :-> Int :-> Int )
   , ("+.", Double :-> Double :-> Double )
-  , ("if", Bool :-> TypeVariable "prim5" :-> TypeVariable "prim6")
-  , ("==", TypeVariable "prim7" :-> TypeVariable "prim8" :-> Bool)
+  , ("if", TypeVariable "prim25" :-> TypeVariable "prim5" :-> TypeVariable "prim6")
+  , ("==", TypeVariable "prim7" :-> TypeVariable "prim8" :-> TypeVariable "prim25")
   , ("-", TypeVariable "prim9" :-> TypeVariable "prim9" :-> TypeVariable "prim9")
-  , ("fib", Int :-> Int)
-  , ("||", Bool :-> Bool :-> Bool)
-  , ("<", TypeVariable "prim10" :-> TypeVariable "prim10" :-> Bool)
+  , ("||", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
+  , ("<", TypeVariable "prim10" :-> TypeVariable "prim10" :-> TypeVariable "prim25")
   , ("/", TypeVariable "prim11" :-> TypeVariable "prim11" :-> TypeVariable "prim11")
-  , ("K", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim13")
-  , ("K1", TypeVariable "prim15" :-> TypeVariable "prim16" :-> TypeVariable "prim16")
+  , ("const", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim13")
+  , ("const2", TypeVariable "prim15" :-> TypeVariable "prim16" :-> TypeVariable "prim16")
   , ("~", TypeVariable "prim17" :-> TypeVariable "prim17")
   , ("*", Int :-> Int :-> Int)
   , ("negate", TypeVariable "prim18" :-> TypeVariable "prim18")
   , ("twice", (TypeVariable "prim19" :-> TypeVariable "prim19") :-> TypeVariable "prim19")
+  , ("id", TypeVariable "prim20" :-> TypeVariable "prim20")
+  , (">", TypeVariable "prim21" :-> TypeVariable "prim21" :-> TypeVariable "prim25")
+  , ("compose", (TypeVariable "prim23" :-> TypeVariable "prim24") :-> (TypeVariable "prim22" :-> TypeVariable "prim23") :-> TypeVariable "prim22" :-> TypeVariable "prim24")
+  , ("<=", TypeVariable "prim27" :-> TypeVariable "prim27" :-> TypeVariable "prim25")
+  -- remove below this line once recursive typechecking works
   , ("fac", Int :-> Int)
-  , ("I", TypeVariable "prim20" :-> TypeVariable "prim20")
-  , (">", TypeVariable "prim21" :-> TypeVariable "prim21" :-> Bool)
+  , ("g", Int :-> Int)
+  , ("fib", Int :-> Int)
   ]
