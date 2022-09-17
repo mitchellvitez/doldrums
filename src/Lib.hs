@@ -80,7 +80,6 @@ fixExprArities :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
 fixExprArities _ e@(AnnExprVariable _ _) = e
 fixExprArities _ e@(AnnExprInt _ _) = e
 fixExprArities _ e@(AnnExprString _ _) = e
-fixExprArities _ e@(AnnExprBool _ _) = e
 fixExprArities _ e@(AnnExprDouble _ _) = e
 fixExprArities datas (AnnExprApplication a f x) = AnnExprApplication a (fixExprArities datas f) (fixExprArities datas x)
 fixExprArities datas (AnnExprLet a name binding body) = AnnExprLet a name (fixExprArities datas binding) (fixExprArities datas body)
@@ -141,9 +140,10 @@ runBase programText strat isDebug = do
               (name, args, const void <$> body))
             constructorArities :: Map Tag Arity
             constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations (prelude <> unnormalizedProgram)
-          debug isDebug "EVALUATION" . tprint $ gMachine constructorArities $ toPlainExprs $ functions (prelude <> unnormalizedProgram)
+          let result = gMachineCore constructorArities $ toPlainExprs $ functions (prelude <> unnormalizedProgram)
+          -- debug isDebug "EVALUATION" . tprint $ gMachineEval result
           debug isDebug "OUTPUT" $ pure ()
-          strat . gMachineOutput constructorArities $ toPlainExprs $ functions (prelude <> unnormalizedProgram)
+          strat $ gMachineOutput result
 
 typecheckingFailureHandler :: Text -> TypeCheckingException -> IO (Either Text Type, TypeInstantiationState)
 typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = do
@@ -160,4 +160,4 @@ typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = d
   putStrLn $ line <> "^"
   tprint msg
   pure $ (Left "typechecking failed", TypeInstantiationState 0 Map.empty)
-  -- exitFailure -- TODO: uncomment this once the typechecker is good
+  -- exitFailure -- comment this out to treat typechecking as a warning

@@ -40,9 +40,6 @@ label :: Expr -> State Integer (AnnotatedExpr Integer)
 label (ExprInt x) = do
   n <- getNext
   pure $ AnnExprInt n x
-label e@(ExprBool x) = do
-  n <- getNext
-  pure $ AnnExprBool n x
 label e@(ExprString x) = do
   n <- getNext
   pure $ AnnExprString n x
@@ -80,7 +77,6 @@ label _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternS
 
 exprToGraphviz :: AnnotatedExpr Integer -> Text
 exprToGraphviz (AnnExprInt n x) = node n $ tshow x
-exprToGraphviz (AnnExprBool n b) = node n $ tshow b
 exprToGraphviz (AnnExprString n s) = node n $ tshow s
 exprToGraphviz (AnnExprDouble n d) = node n $ tshow d
 exprToGraphviz (AnnExprConstructor n t a) =

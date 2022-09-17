@@ -2,8 +2,10 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module GMachine
-  ( gMachine
+  ( gMachineEval
   , gMachineOutput
+  , gMachineCore
+  , GmState
   )
 where
 
@@ -20,13 +22,14 @@ import qualified Data.Map as Map
 import Heap
 import Language
 
-gMachine :: Map Tag Arity -> [(Name, [Name], Expr)] -> Text
-gMachine constructorArities =
-  showResults . eval . compile constructorArities
+gMachineCore :: Map Tag Arity -> [(Name, [Name], Expr)] -> [GmState]
+gMachineCore constructorArities = eval . compile constructorArities
 
-gMachineOutput :: Map Tag Arity -> [(Name, [Name], Expr)] -> Text
-gMachineOutput constructorArities =
-  getOutput . last . eval . compile constructorArities
+gMachineEval :: [GmState] -> Text
+gMachineEval = showResults
+
+gMachineOutput :: [GmState] -> Text
+gMachineOutput = T.init . getOutput . last
 
 data GmState = GmState
   { getOutput :: GmOutput
@@ -88,6 +91,7 @@ data Instruction
   = Unwind
   | Pushglobal Name
   | Pushint Int
+  | Pushstring Text
   | Push Int
   | Mkap
   | Slide Int
@@ -111,6 +115,7 @@ data Node
   | NGlobal Arity GmCode
   | NInd Addr
   | NConstr Tag [Addr]
+  | NStr Text
   deriving Eq
 
 eval :: GmState -> [GmState]
@@ -133,6 +138,7 @@ step state@GmState{..} = dispatch code $ putCode codes state
 dispatch :: Instruction -> GmState -> GmState
 dispatch (Pushglobal f) = pushglobal f
 dispatch (Pushint n)    = pushint n
+dispatch (Pushstring s) = pushstring s
 dispatch Mkap           = mkap
 dispatch (Push n)       = push n
 dispatch (Slide n)      = slide n
@@ -199,6 +205,7 @@ print' :: GmState -> GmState
 print' state@GmState{..} =
  case node of
     (NNum n) -> putOutput (getOutput <> tshow n <> " ") $ putStack stack state
+    (NStr s) -> putOutput (getOutput <> tshow s <> " ") $ putStack stack state
     (NConstr tag args) ->
       let i' = concat $ replicate (length args) [Eval, Print]
        in putOutput (getOutput <> tag <> " ") $
@@ -302,6 +309,11 @@ pushint n state@GmState{..} =
   putHeap heap' $ putStack (a : getStack) state
   where (heap', a) = hAlloc getHeap $ NNum n
 
+pushstring :: Text -> GmState -> GmState
+pushstring s state@GmState{..} =
+  putHeap heap' $ putStack (a : getStack) state
+  where (heap', a) = hAlloc getHeap $ NStr s
+
 mkap :: GmState -> GmState
 mkap state@GmState{..} =
   putHeap heap' $ putStack (a : as') state
@@ -325,6 +337,10 @@ unwind state = newState (hLookup heap a)
         heap = getHeap state
         newState :: Node -> GmState
         newState (NNum n)      = if null $ getDump state
+                                    then state
+                                    else let ((code', stack'):ds) = getDump state
+                                          in (putDump ds) . (putCode code') . (putStack (a:stack')) $ state
+        newState (NStr s)      = if null $ getDump state
                                     then state
                                     else let ((code', stack'):ds) = getDump state
                                           in (putDump ds) . (putCode code') . (putStack (a:stack')) $ state
@@ -482,6 +498,7 @@ compileC (ExprVariable v) args
     | otherwise               = [Pushglobal v]
   where n = aLookup args v
 compileC (ExprInt n) args = [Pushint $ fromIntegral n]
+compileC (ExprString s) args = [Pushstring s]
 compileC (ExprApplication e1 e2) args = compileC e2 args ++
                             compileC e1 (argOffset 1 args) ++
                             [Mkap]
@@ -495,7 +512,7 @@ compileC e args = let (core, exps) = decompose e
                            (ExprConstructor t a) -> concatMap (\(exp, offset) -> compileC exp (argOffset offset args))
                                                      (zip (reverse exps) [0..])
                                             ++ [Pack t a]
-                           _             -> error "Not implemented yet"
+                           x             -> error $ "Not implemented yet: " <> show x
 
 compileLetRec :: GmCompiler -> [(Name, Expr)] -> GmCompiler
 compileLetRec comp defs exp env = [Alloc (length defs)] ++ compileLetRec' defs env' ++ comp exp env' ++ [Slide (length defs)]
@@ -586,8 +603,8 @@ showState s = fold
   , "\n"
   , showDump s
   , "\n"
-  -- , showHeap s
-  -- , "\n"
+  , showHeap s
+  , "\n"
   , showInstructions $ getCode s
   ]
 
@@ -645,15 +662,16 @@ shortShowStack stack = fold
   , "]"
   ]
 
--- showHeap :: GmState -> Text
--- showHeap s = fold
---   [ "  Heap:( "
---   , T.intercalate ", " $ map (\(addr, val) -> showAddr addr <> ": " <> showNode s addr val) (reverse . hToList $ getHeap s)
---   , " )"
---   ]
+showHeap :: GmState -> Text
+showHeap s = fold
+  [ "  Heap:( "
+  , T.intercalate ", " $ map (\(addr, val) -> showAddr addr <> ": " <> showNode s addr val) (reverse . hToList $ getHeap s)
+  , " )"
+  ]
 
 showNode :: GmState -> Addr -> Node -> Text
 showNode s a (NNum n) = tshow n
+showNode s a (NStr n) = tshow n
 showNode s a (NGlobal n g) = "Global " <> v
   where v = head [n | (n,b) <- getGlobals s, a == b]
 showNode s a (NAp a1 a2) = fold

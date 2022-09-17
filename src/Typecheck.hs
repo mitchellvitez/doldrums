@@ -167,7 +167,6 @@ varBind sourcePos u t
 
 typeCheckExpr :: TypeEnv -> AnnotatedExpr SourcePos -> TypeInstantiation (Substitution, Type)
 typeCheckExpr _ (AnnExprInt _ _) = pure (emptySubstitution, Int)
-typeCheckExpr _ (AnnExprBool _ _) = pure (emptySubstitution, Bool)
 typeCheckExpr _ (AnnExprString _ _) = pure (emptySubstitution, String)
 typeCheckExpr _ (AnnExprDouble _ _) = pure (emptySubstitution, Double)
 -- TODO: Constructor should return a function type (a -> b -> Constructor) according to its arity.

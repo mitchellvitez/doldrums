@@ -18,6 +18,9 @@ data Program a = Program
   { functions :: [Function a]
   , dataDeclarations :: [DataDeclaration]
   }
+deriving instance Show (Program SourcePos)
+deriving instance Show (Program Void)
+deriving instance Eq (Program Void)
 
 instance Semigroup (Program a) where
   Program f1 d1 <> Program f2 d2 = Program (f1 <> f2) (d1 <> d2)
@@ -26,6 +29,7 @@ instance Semigroup (Program a) where
 -- Just, 1
 -- TODO: check that there aren't two constructors in the same program with the same Tag (Tags should be unique)
 newtype DataDeclaration = DataDeclaration { unDataDeclaration :: [(Tag, Arity)] }
+  deriving (Eq, Show)
 
 -- name, list of arguments, body
 data Function a = Function
@@ -33,6 +37,9 @@ data Function a = Function
   , args :: [Name]
   , body :: AnnotatedExpr a
   }
+deriving instance Show (Function SourcePos)
+deriving instance Show (Function Void)
+deriving instance Eq (Function Void)
 
 -- case name, variables to unpack, body
 type CaseAlternative a = (Tag, [Name], AnnotatedExpr a)
@@ -44,7 +51,6 @@ type Arity = Int
 data AnnotatedExpr a
   = AnnExprVariable a Name
   | AnnExprInt a Integer
-  | AnnExprBool a Bool
   | AnnExprString a Text
   | AnnExprDouble a Double
   | AnnExprConstructor a Tag Arity
@@ -58,7 +64,6 @@ annotation :: AnnotatedExpr a -> a
 annotation (AnnExprInt annot _)           = annot
 annotation (AnnExprVariable annot _)      = annot
 annotation (AnnExprApplication annot _ _) = annot
-annotation (AnnExprBool annot _)          = annot
 annotation (AnnExprString annot _)        = annot
 annotation (AnnExprDouble annot _)        = annot
 annotation (AnnExprConstructor annot _ _) = annot
@@ -71,7 +76,6 @@ instance Functor AnnotatedExpr where
   fmap f (AnnExprInt a n) = AnnExprInt (f a) n
   fmap f (AnnExprVariable a name) = AnnExprVariable (f a) name
   fmap f (AnnExprApplication a expr1 expr2) = AnnExprApplication (f a) (f <$> expr1) (f <$> expr2)
-  fmap f (AnnExprBool a b) = AnnExprBool (f a) b
   fmap f (AnnExprString a s) = AnnExprString (f a) s
   fmap f (AnnExprDouble a d) = AnnExprDouble (f a) d
   fmap f (AnnExprConstructor a tag arity) = AnnExprConstructor (f a) tag arity
@@ -83,7 +87,6 @@ instance Functor AnnotatedExpr where
 -- data Expr
 --   = ExprVariable Name
 --   | ExprInt Integer
---   | ExprBool Bool
 --   | ExprString Text
 --   | ExprDouble Double
 --   | ExprConstructor Tag Arity
@@ -103,7 +106,6 @@ annotatedToExpr = fmap (const void)
 instance Show Expr where
   show (ExprVariable name) = show name
   show (ExprInt n) = show n
-  show (ExprBool b) = show b
   show (ExprString s) = show s
   show (ExprDouble d) = show d
   show (ExprConstructor tag arity) = "(Constr " <> show tag <> "," <> show arity <> ")"
@@ -119,10 +121,6 @@ void = error "can't evaluate void"
 pattern ExprInt :: Integer -> Expr
 pattern ExprInt n <- AnnExprInt _ n
   where ExprInt n = AnnExprInt void n
-
-pattern ExprBool :: Bool -> Expr
-pattern ExprBool b <- AnnExprBool _ b
-  where ExprBool b = AnnExprBool void b
 
 pattern ExprString :: Text -> Expr
 pattern ExprString s <- AnnExprString _ s

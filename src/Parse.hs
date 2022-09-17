@@ -11,6 +11,8 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Text.Megaparsec.Char.Lexer as L
 
+type Parser = Parsec Void Text
+
 spaceConsumer :: Parser ()
 spaceConsumer =
   L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
@@ -18,27 +20,24 @@ spaceConsumer =
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
 
--- TODO: replace Void with a better error handling mechanism
-type Parser = Parsec Void Text
-
 parseProgram :: Parser (Program SourcePos)
 parseProgram = do
   spaceConsumer
   topLevels <- parseTopLevel `endBy1` lexeme (char ';')
   pure $ accumTopLevels topLevels $ Program [] []
-
   where
-    accumTopLevels :: [Either (Function SourcePos) DataDeclaration] -> Program SourcePos -> Program SourcePos
     accumTopLevels [] x = x
-    accumTopLevels (Left function : rest) program = accumTopLevels rest
+    accumTopLevels (Func function : rest) program = accumTopLevels rest
       program { functions = function : functions program }
-    accumTopLevels (Right dataDeclaration : rest) program = accumTopLevels rest
+    accumTopLevels (Decl dataDeclaration : rest) program = accumTopLevels rest
       program { dataDeclarations = dataDeclaration : dataDeclarations program }
 
-parseTopLevel :: Parser (Either (Function SourcePos) DataDeclaration)
+data TopLevel a = Decl DataDeclaration | Func (Function a)
+
+parseTopLevel :: Parser (TopLevel SourcePos)
 parseTopLevel =
-  try (Right <$> parseDataDeclaration) <|>
-  (Left <$> parseFunction)
+  try (Decl <$> parseDataDeclaration) <|>
+  Func <$> parseFunction
 
 parseFunction :: Parser (Function SourcePos)
 parseFunction = do
@@ -74,7 +73,7 @@ parseExpr =
   parseOperator
 
 parseOperator :: Parser Expr
-parseOperator = makeExprParser parseExprApplication opTable <?> "expression"
+parseOperator = makeExprParser parseExprApplication opTable
 
 -- Table of all operators, ordered by precedence level
 -- If you add a new operator here, add a new type to primitiveTypes

@@ -16,7 +16,6 @@ interpret program = unpackExpr . fst $ runState (eval program) Map.empty
 
 unpackExpr :: Expr -> Text
 unpackExpr (ExprInt n) = tshow n
-unpackExpr (ExprBool b) = tshow b
 unpackExpr (ExprString s) = tshow s
 unpackExpr (ExprDouble d) = tshow d
 unpackExpr (ExprConstructor tag arity) = "Pack{" <> tshow tag <> ", " <> tshow arity <> "}"
@@ -38,8 +37,8 @@ eval (ExprApplication (ExprApplication (ExprApplication (ExprVariable "if") pred
   evalA <- eval a
   evalB <- eval b
   case evalPred of
-    ExprBool True -> pure evalA
-    ExprBool False -> pure evalB
+    ExprConstructor "True" 0 -> pure evalA
+    ExprConstructor "False" 0 -> pure evalB
     _ -> throw . RuntimeException $ "Invalid predicate in an if expression: " <> tshow pred
 
 eval (ExprApplication (ExprVariable "~") a) = do
@@ -52,7 +51,8 @@ eval (ExprApplication (ExprVariable "~") a) = do
 eval (ExprApplication (ExprVariable "!") a) = do
   evalA <- eval a
   case evalA of
-    ExprBool x -> pure . ExprBool $ not x
+    ExprConstructor "True" 0 -> pure $ ExprConstructor "False" 0
+    ExprConstructor "False" 0 -> pure $ ExprConstructor "True" 0
     x -> throw . RuntimeException $ "Invalid argument to (!): " <> tshow x
 
 eval (ExprApplication (ExprApplication (ExprVariable op) a) b) = do
@@ -81,7 +81,6 @@ eval (ExprApplication (ExprApplication (ExprVariable op) a) b) = do
 
 -- basic lambda calculus
 eval e@(ExprInt _) = pure e
-eval e@(ExprBool _) = pure e
 eval e@(ExprString _) = pure e
 eval e@(ExprDouble _) = pure e
 eval e@(ExprConstructor _ _) = pure e
@@ -145,8 +144,11 @@ evalBinBoolOp op a b = do
       "||" -> (||)
       x -> throw . RuntimeException $ "Unknown binary bool operation: " <> x
   case (evalA, evalB) of
-    (ExprBool x, ExprBool y) -> pure . ExprBool $ x `primOp` y
+    (ExprConstructor x 0, ExprConstructor y 0) -> pure $ ExprConstructor (tshow $ toBool x `primOp` toBool y) 0
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
+  where toBool "True" = True
+        toBool "False" = False
+        toBool _ = error "evalBinBoolOp"
 
 evalBinCompOp :: Name -> Expr -> Expr -> State Env Expr
 evalBinCompOp op a b = do
@@ -162,7 +164,7 @@ evalBinCompOp op a b = do
       ">=" -> (>=)
       x -> throw . RuntimeException $ "Unknown comparison operation: " <> x
   case (evalA, evalB) of
-    (ExprInt x, ExprInt y) -> pure . ExprBool $ x `primOp` y
+    (ExprInt x, ExprInt y) -> pure $ ExprConstructor (tshow (x `primOp` y)) 0
     -- TODO
     -- (ExprDouble x, ExprDouble y) -> pure . ExprBool $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> op <> "): " <> tshow x <> ", " <> tshow y
