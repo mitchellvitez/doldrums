@@ -10,7 +10,6 @@ import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import Language
--- import Interpret
 import GMachine
 import Control.Exception (catch)
 import Control.Monad (when)
@@ -54,22 +53,7 @@ debug isDebug label action = when isDebug $ do
   putTextLn $ "\n -- " <> label <> " -- "
   action
 
-lookupMain :: [Function SourcePos] -> AnnotatedExpr SourcePos
-lookupMain [] = error "No main function is defined."
-lookupMain (Function name _ body:rest)
-  | name == "main" = body
-  | otherwise = lookupMain rest
-
-toLambda :: Function SourcePos -> (Name, AnnotatedExpr SourcePos)
-toLambda (Function name args body) =
-  (name, Prelude.foldr (AnnExprLambda $ annotation body) body args)
-
-normalizeAST :: Program SourcePos -> AnnotatedExpr SourcePos
-normalizeAST program = foldr (\(name, expr) -> AnnExprLet (annotation expr) name expr) (lookupMain $ functions program) lambdas
-  where
-    withoutMain = filter (\(Function name _ _) -> name /= "main")
-    lambdas = map toLambda . withoutMain $ functions program
-
+-- TODO: move normalization and arity fixing to a new module
 lookupTag :: [DataDeclaration] -> Tag -> Arity
 lookupTag [] tag = error $ "Could not find constructor: " <> show tag
 lookupTag (DataDeclaration [] : rest) tag = lookupTag rest tag
@@ -89,7 +73,7 @@ fixExprArities datas (AnnExprLambda a name expr) = AnnExprLambda a name (fixExpr
 fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) alters
 
 fixFunctionArities :: [DataDeclaration] -> Function a -> Function a
-fixFunctionArities datas f@(Function _ _ body) =
+fixFunctionArities datas f@(Function _ _ _ body) =
   f { body = fixExprArities datas body }
 
 fixArities :: Program a -> Program a
@@ -107,15 +91,14 @@ runBase programText strat isDebug = do
       case parse parseProgram "" programText of
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
-          -- TODO: could instead do two parsing passes and check this at parse time
-          -- let prelude = fixArities unnormalizedBadAritiesProgram
           let unnormalizedProgram = fixArities (prelude <> unnormalizedBadAritiesProgram)
-          let program = normalizeAST unnormalizedProgram
-          debug isDebug "AST" . print $ annotatedToExpr program
+          let unnormalizedProgramWithoutPrelude = fixArities unnormalizedBadAritiesProgram
 
-          debug isDebug "GRAPHVIZ" . putStrLn . unpack . toGraphviz $ annotatedToExpr program
+          debug isDebug "AST" . print $ fmap (const void) unnormalizedProgramWithoutPrelude
 
-          (types, state) <- typeInference program `catch` typecheckingFailureHandler programText
+          debug isDebug "GRAPHVIZ" . putStrLn . unpack . toGraphviz $ const void <$> unnormalizedProgramWithoutPrelude
+
+          (types, state) <- typeInference unnormalizedProgram `catch` typecheckingFailureHandler programText
           debug isDebug "TYPE" $ do
             let toText (Right x) = pack $ show x
                 toText (Left x) = x
@@ -137,12 +120,12 @@ runBase programText strat isDebug = do
           -- G machine --
           let
             toPlainExprs :: [Function SourcePos] -> [(Name, [Name], Expr)]
-            toPlainExprs = map (\(Function name args body) -> (name, args, annotatedToExpr body))
+            toPlainExprs = map (\(Function _ name args body) -> (name, args, annotatedToExpr body))
 
             constructorArities :: Map Tag Arity
             constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations unnormalizedProgram
           let result = gMachineCore constructorArities $ toPlainExprs $ functions unnormalizedProgram
-          debug isDebug "EVALUATION" . putTextLn $ gMachineEval result
+          -- debug isDebug "EVALUATION" . putTextLn $ gMachineEval result
           -- debug isDebug "COMPILED" . putTextLn $ gMachineEval result
           debug isDebug "OUTPUT" $ pure ()
           strat $ gMachineOutput result

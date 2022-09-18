@@ -46,7 +46,8 @@ parseFunction = do
   args <- many parseName
   lexeme $ char '='
   body <- parseAnnotatedExpr
-  pure $ Function name args body
+  sourcePos <- getSourcePos
+  pure $ Function sourcePos name args body
 
 parseDataDeclaration :: Parser DataDeclaration
 parseDataDeclaration = do

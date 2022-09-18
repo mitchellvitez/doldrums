@@ -7,7 +7,7 @@ import Parse
 import Lib (runTest)
 import Typecheck
 
-import Control.Monad (void)
+import qualified Control.Monad as CM (void)
 import Data.Either
 import Data.Text
 import Data.Void
@@ -24,7 +24,7 @@ testProgramParser parser input output =
   (ignoreAnnotations <$> parse parser "" input) `shouldBe` Right output
   where
     ignoreAnnotations (Program funcs datas) = Program funcs' datas
-      where funcs' = Prelude.map (\(Function name args expr) -> Function name args (const Language.void <$> expr)) funcs
+      where funcs' = Prelude.map (\(Function annot name args expr) -> Function void name args (const Language.void <$> expr)) funcs
 
 testParserFail :: (Show a, Eq a) => Parser a -> Text -> Expectation
 testParserFail parser input =
@@ -42,7 +42,7 @@ main :: IO ()
 main = hspec $ do
   describe "typechecking" $ do
     it "num plus string - parses" $ do
-      testProgramParser parseProgram "main = 1 + \"hello\";" (Program [Function "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
+      testProgramParser parseProgram "main = 1 + \"hello\";" (Program [Function void "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
 
     it "num plus string" $ do
       testProgramException "main = 1 + \"hello\";"
@@ -99,7 +99,11 @@ main = let d = e, a = b, c = d, e = f, b = c in f;
 |]
 
     it "mutually recursive functions" $ do
-      testProgram "1" "f n = if (n < 0) n (g (n - 1)); g n = f (n - 1); main = f 3;"
+      testProgram "1" [r|
+f n = if (n < 0) n (g (n - 1));
+g n = f (n - 1);
+main = f 3;
+|]
 
     it "any top-level order" $ do
       testProgram "7" "main = b; b = c; a = 7; c = a;"
@@ -135,7 +139,7 @@ main = let d = e, a = b, c = d, e = f, b = c in f;
       testProgramParser parseProgram [r|
 main = negate $ negate 3;
 |]
-        (Program [Function "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprInt 3)))] [])
+        (Program [Function void "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprInt 3)))] [])
 
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "True" (ExprConstructor "True" (-1))
@@ -157,7 +161,7 @@ main = negate $ negate 3;
 id x = x;
 main = id 2;
 |]
-        (Program [Function "id"  ["x"] (ExprVariable "x"), Function "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
+        (Program [Function void "id"  ["x"] (ExprVariable "x"), Function void "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
 
     it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
@@ -167,8 +171,8 @@ main = id 2;
 main = double 21;
 double x = x + x;
 |]
-        (Program [ Function "main" [] (ExprApplication (ExprVariable "double") (ExprInt 21))
-        , Function "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
+        (Program [ Function void "main" [] (ExprApplication (ExprVariable "double") (ExprInt 21))
+        , Function void "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
         ] [])
 
     it "parses a program with many functions" $ do
@@ -178,7 +182,7 @@ f p = (id p) * p;
 double n = n * 2;
 main = f (double 4);
 |]
-        (Program [Function "id" ["x"] (ExprVariable "x"), Function "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprInt 2)), Function "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprInt 4)))] [])
+        (Program [Function void "id" ["x"] (ExprVariable "x"), Function void "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function void "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprInt 2)), Function void "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprInt 4)))] [])
 
 
   describe "test full programs - " $ do
@@ -261,4 +265,11 @@ main = g 3;
     it "negative numbers" $ do
       testProgram "-6" [r|
 main = 20 - 14;
+|]
+
+    it "two functions with the same name" $ do
+      testProgramException [r|
+f x = x;
+f y = y;
+main = f "hello";
 |]

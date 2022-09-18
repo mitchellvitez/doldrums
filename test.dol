@@ -1,2 +1,1 @@
-g n = if (n < negate 5) n $ g (n - 1);
-main = g 3;
+main = let d = e, a = b, c = d, e = f, b = c in f;

@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Typecheck
   ( typeInference
@@ -25,15 +26,10 @@ import qualified Data.Set as Set
 import Text.Megaparsec (SourcePos)
 import Data.Text (Text, pack)
 
--- TODO add typechecking for recursion, e.g. this program:
--- main = fac 3;
--- fac n = if (n == 0) 1 (n * fac (n-1));
-
 data Type
   = Int
   | Double
   | String
-  -- | Constructor Name -- TODO
   | Type :-> Type
   | TypeVariable Name
   deriving (Eq, Show, Generic, NFData)
@@ -142,10 +138,6 @@ unify sourcePos (a1 :-> b1) (a2 :-> b2) = do
 unify sourcePos (TypeVariable u) t = varBind sourcePos u t
 unify sourcePos t (TypeVariable u) = varBind sourcePos u t
 unify _ Int Int = pure emptySubstitution
--- unify sourcePos (Constructor name1) (Constructor name2)
---   | name1 == name2 = pure emptySubstitution
---   | otherwise = throw . TypeCheckingException sourcePos $
---     "Type mismatch: " <> tag1 <> " does not match " <> tag2
 unify _ String String = pure emptySubstitution
 unify _ Double Double = pure emptySubstitution
 unify sourcePos a b = throw . TypeCheckingException sourcePos $ fold
@@ -202,6 +194,7 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   (subs2, type2) <- typeCheckExpr (apply subs1 env) expr2
   subs3 <- unify sourcePos (apply subs2 type1) (type2 :-> typeVar)
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
+-- TODO: let expressions should (like functions) create a bunch of type variables at the beginning then unify all of them mutually
 typeCheckExpr env (AnnExprLet _ name expr1 expr2) = do
   (subs1, type1) <- typeCheckExpr env expr1
   let TypeEnv env1 = remove env name
@@ -209,26 +202,45 @@ typeCheckExpr env (AnnExprLet _ name expr1 expr2) = do
       env2 = TypeEnv $ Map.insert name generalizedType env1
   (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
   pure (subs1 `combineSubstitutions` subs2, type2)
-typeCheckExpr env (AnnExprCase _ expr alts) = do
-  typeCheckExpr env expr -- TODO: typecheck cases properly (all results should unify, overal type should be type of each alter)
-  -- (subs1, type1) <- typeCheckExpr env expr
-  -- let TypeEnv env1 = remove env name
-  --     generalizedType = generalize (apply subs1 env) type1
-  --     env2 = TypeEnv $ Map.insert name generalizedType env1
-  -- (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
-  -- pure (subs1 `combineSubstitutions` subs2, type2)
+-- TODO: typecheck that all case alternatives unify to the same result type
+typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
+  let altExprs = map (\(_, _, expr) -> expr) alts
+      firstAltExpr = (\(_, _, expr) -> expr) $ head alts
+  altExprTypes :: [(Substitution, Type)] <- mapM (typeCheckExpr env) altExprs
+  firstExpr <- typeCheckExpr env firstAltExpr
+  foldM foldAction firstExpr altExprTypes
+  where
+    foldAction :: (Substitution, Type) -> (Substitution, Type) -> TypeInstantiation (Substitution, Type)
+    foldAction (s1, t1) (s2, t2) = do
+      newSubs <- unify sourcePos t1 t2
+      pure (newSubs, t1)
 
 infer :: Map Name Scheme -> AnnotatedExpr SourcePos -> TypeInstantiation Type
 infer env expr = do
   (subs, type_) <- typeCheckExpr (TypeEnv env) expr
   pure $ apply subs type_
 
-typeInference :: AnnotatedExpr SourcePos -> IO (Either Text Type, TypeInstantiationState)
+typeInference :: Program SourcePos -> IO (Either Text Type, TypeInstantiationState)
 typeInference program =
-  runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes) program
+  runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1) (getMainExpr program)
+  where
+    initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
+    initialFunctionTypes (Program [] datas) _ = []
+    initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
+      (name, functionType n (length args)) : initialFunctionTypes (Program restFuncs datas) (n+1)
 
--- TODO: add type inference for recursive/mutually recursive functions so fewer of these are necessary
--- TODO: add primitiveTypes for all primitive operators as well as everything in Prelude.dol
+    functionType :: Int -> Arity -> Type
+    functionType n 0 = do
+      TypeVariable $ "f" <> tshow n <> "arg0"
+    functionType n args = do
+      (TypeVariable $ "f" <> tshow n <> "arg" <> tshow args) :-> (functionType n (args - 1))
+
+    getMainExpr :: Program SourcePos -> AnnotatedExpr SourcePos
+    getMainExpr (Program [] datas) = error "Couldn't find main"
+    getMainExpr (Program (Function _ name _ body : restFuncs) datas) = case name of
+      "main" -> body
+      _ -> getMainExpr $ Program restFuncs datas
+
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
   -- prim25 = "Bool" for now
@@ -250,8 +262,7 @@ primitiveTypes = Map.fromList
   , (">", TypeVariable "prim21" :-> TypeVariable "prim21" :-> TypeVariable "prim25")
   , ("compose", (TypeVariable "prim23" :-> TypeVariable "prim24") :-> (TypeVariable "prim22" :-> TypeVariable "prim23") :-> TypeVariable "prim22" :-> TypeVariable "prim24")
   , ("<=", TypeVariable "prim27" :-> TypeVariable "prim27" :-> TypeVariable "prim25")
-  -- remove below this line once recursive typechecking works
-  , ("fac", Int :-> Int)
-  , ("g", Int :-> Int)
-  , ("fib", Int :-> Int)
+  , ("!=", TypeVariable "prim28" :-> TypeVariable "prim28" :-> TypeVariable "prim25")
+  , (">=", TypeVariable "prim29" :-> TypeVariable "prim29" :-> TypeVariable "prim25")
+  , ("&&", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
   ]

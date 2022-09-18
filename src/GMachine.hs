@@ -9,9 +9,6 @@ module GMachine
   )
 where
 
--- TODO: page 135, 3.8.6
--- this will add data constructors along with casing on them
-
 import Data.Char (isUpper)
 import Data.Foldable
 import qualified Data.Text as T

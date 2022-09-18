@@ -11,36 +11,64 @@ module Language
   )
 where
 
-import Data.Text (Text)
+import Data.List (intercalate)
+import Data.Text (Text, unpack)
 import Data.Void
 import Text.Megaparsec (SourcePos)
 
+-- TODO: make Show instances whatever's derived, and create a single separate function for AST debug output
 data Program a = Program
   { functions :: [Function a]
   , dataDeclarations :: [DataDeclaration]
   }
-deriving instance Show (Program SourcePos)
-deriving instance Show (Program Void)
 deriving instance Eq (Program Void)
+deriving instance Show (Program SourcePos)
+
+-- not lawful
+instance Show (Program Void) where
+  show (Program funcs datas) = intercalate "\n" (map show datas) <> "\n" <> intercalate "\n" (map show funcs)
+
+-- instance Show Expr where
+--   show (ExprVariable name) = show name
+--   show (ExprInt n) = show n
+--   show (ExprString s) = show s
+--   show (ExprDouble d) = show d
+--   show (ExprConstructor tag arity) = "(Constr " <> show tag <> "," <> show arity <> ")"
+--   show (ExprApplication a b) = "(App " <> show a <> " " <> show b <> ")"
+--   show (ExprLet name a b) = "(Let " <> show name <> " " <> show a <> " " <> show b <> ")"
+--   show (ExprLambda name expr) = "(Lam " <> show name <> " " <> show expr <> ")"
+--   show (ExprCase expr alts) = "(Case " <> show expr <> " " <> show alts <> ")"
+  -- show _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
 instance Semigroup (Program a) where
   Program f1 d1 <> Program f2 d2 = Program (f1 <> f2) (d1 <> d2)
 
+instance Functor Program where
+  fmap f (Program funcs datas) = Program (fmap f <$> funcs) datas
+
 -- tag, arity
 -- Just, 1
 -- TODO: check that there aren't two constructors in the same program with the same Tag (Tags should be unique)
+-- TODO: check that there aren't two functions in the same program with the same name
+-- this means that it should probably be a Map Tag Arity
 newtype DataDeclaration = DataDeclaration { unDataDeclaration :: [(Tag, Arity)] }
   deriving (Eq, Show)
 
 -- name, list of arguments, body
 data Function a = Function
-  { name :: Name
+  { annot :: a
+  , name :: Name
   , args :: [Name]
   , body :: AnnotatedExpr a
   }
 deriving instance Show (Function SourcePos)
-deriving instance Show (Function Void)
 deriving instance Eq (Function Void)
+
+instance Show (Function Void) where
+  show (Function annot name args body) = unpack name <> " " <> intercalate " " (map unpack args) <> " = " <> show body
+
+instance Functor Function where
+  fmap f (Function annot name args body) = Function (f annot) name args (f <$> body)
 
 -- case name, variables to unpack, body
 type CaseAlternative a = (Tag, [Name], AnnotatedExpr a)
@@ -72,7 +100,6 @@ annotation (AnnExprLet annot _ _ _)       = annot
 annotation (AnnExprLambda annot _ _)      = annot
 annotation (AnnExprCase annot _ _)        = annot
 
--- TODO: make this a Bifunctor instead
 instance Functor AnnotatedExpr where
   fmap f (AnnExprInt a n) = AnnExprInt (f a) n
   fmap f (AnnExprVariable a name) = AnnExprVariable (f a) name

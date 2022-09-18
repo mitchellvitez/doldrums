@@ -11,20 +11,26 @@ where
 import Language
 import Control.Monad.State
 import Data.Foldable
-import Data.Text
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Void
 
 -- runs two passes:
 --   1. label each node in the expr with unique integer
 --   2. use the labeled expr tree to generate graphviz
-toGraphviz :: Expr -> Text
-toGraphviz e = fold
-  [ "digraph {\n  rankdir=BT\n  ordering=in\n  0 [label=\"main\"]\n  1 -> 0"
-  , exprToGraphviz $ fst $ runState (label e) 0
+toGraphviz :: Program Void -> Text
+toGraphviz program = fold
+  [ "digraph {\n  rankdir=BT\n  ordering=in\n"
+  , programToGraphviz . fst $ runState (labelProgram program) (-1, Map.fromList [("main", 0)])
   , "\n}"
   ]
 
 tshow :: Show a => a -> Text
-tshow = pack . show
+tshow = T.pack . show
 
 node :: Integer -> Text -> Text
 node n label = "\n  " <> tshow n <> " [label=\"" <> label <> "\"]"
@@ -32,83 +38,124 @@ node n label = "\n  " <> tshow n <> " [label=\"" <> label <> "\"]"
 pointsTo :: Integer -> Integer -> Text
 pointsTo a b = "\n  " <> tshow a <> " -> " <> tshow b
 
-getNext :: State Integer Integer
-getNext = modify (+1) >> get
+type LabelState = (Integer, Map Name Integer)
 
--- label nodes with an in-order traversal
-label :: Expr -> State Integer (AnnotatedExpr Integer)
-label (ExprInt x) = do
+getNext :: State LabelState Integer
+getNext = modify (\(n, env) -> (n+1, env)) >> fst <$> get
+
+labelProgram :: Program Void -> State LabelState (Program Integer)
+labelProgram (Program funcs datas) = do
+  let functionNames = fmap name funcs
+      zipped = zip functionNames $ repeat (-1)
+  put (0, Map.fromList zipped)
+  newFuncs <- mapM labelFunction funcs
+  newFuncs' <- mapM labelFunctionAndExprs newFuncs
+  pure $ Program newFuncs' datas
+
+labelFunction :: Function Void -> State LabelState (Function Integer)
+labelFunction (Function annot name args body) = do
+  getNext
+  (n, env) <- get
+  when (name `Map.member` env) $ error "duplication function with same name"
+  let env' = Map.insert name n env
+  put (n, env')
+  pure $ Function n name args (const (-1) <$> body)
+
+labelFunctionAndExprs :: Function Integer -> State LabelState (Function Integer)
+labelFunctionAndExprs (Function annot name args body) = do
+  labeledBody <- labelExpr (const Language.void <$> body)
+  pure $ Function annot name args labeledBody
+
+labelExpr :: Expr -> State LabelState (AnnotatedExpr Integer)
+labelExpr (ExprInt x) = do
   n <- getNext
   pure $ AnnExprInt n x
-label e@(ExprString x) = do
+labelExpr e@(ExprString x) = do
   n <- getNext
   pure $ AnnExprString n x
-label e@(ExprConstructor tag arity) = do
+labelExpr e@(ExprConstructor tag arity) = do
   n <- getNext
   pure $ AnnExprConstructor n tag arity
-label e@(ExprDouble x) = do
+labelExpr e@(ExprDouble x) = do
   n <- getNext
   pure $ AnnExprDouble n x
-label e@(ExprVariable v) = do
+labelExpr e@(ExprVariable var) = do
+  (_, env) <- get
+  case Map.lookup var env of
+    Nothing -> do
+      n <- getNext
+      pure $ AnnExprVariable n var
+    Just existing ->
+      pure $ AnnExprVariable existing var
+labelExpr (ExprApplication left right) = do
   n <- getNext
-  pure $ AnnExprVariable n v
-label (ExprApplication left right) = do
-  n <- getNext
-  labeledLeft <- label left
-  labeledRight <- label right
+  labeledLeft <- labelExpr left
+  labeledRight <- labelExpr right
   pure $ AnnExprApplication n labeledLeft labeledRight
-label (ExprLambda name expr) = do
+labelExpr (ExprLambda name expr) = do
   n <- getNext
-  labeledExpr <- label expr
+  labeledExpr <- labelExpr expr
   pure $ AnnExprLambda n name labeledExpr
-label (ExprLet name binding body) = do
+labelExpr (ExprLet name binding body) = do
   n <- getNext
-  labeledBinding <- label binding
-  labeledBody <- label body
+  labeledBinding <- labelExpr binding
+  labeledBody <- labelExpr body
   pure $ AnnExprLet n name labeledBinding labeledBody
-label (ExprCase scrutinee alts) = do
+labelExpr (ExprCase scrutinee alts) = do
   n <- getNext
-  labeledScrutinee <- label scrutinee
+  labeledScrutinee <- labelExpr scrutinee
   labeledAlts <- forM alts $ \(n, vars, expr) -> do
-    labeledExpr <- label expr
+    labeledExpr <- labelExpr expr
     pure (n, vars, labeledExpr)
   pure $ AnnExprCase n labeledScrutinee labeledAlts
-label _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
+labelExpr _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
-exprToGraphviz :: AnnotatedExpr Integer -> Text
-exprToGraphviz (AnnExprInt n x) = node n $ tshow x
-exprToGraphviz (AnnExprString n s) = node n $ tshow s
-exprToGraphviz (AnnExprDouble n d) = node n $ tshow d
-exprToGraphviz (AnnExprConstructor n t a) =
+programToGraphviz :: Program Integer -> Text
+programToGraphviz (Program funcs datas) =
+  fold $ functionToGraphviz (Set.fromList $ fmap name funcs) <$> funcs
+
+functionToGraphviz :: Set Name -> Function Integer -> Text
+functionToGraphviz functionNames (Function annot name args body) = fold
+  [ node annot name
+  , exprToGraphviz functionNames body
+  , annotation body `pointsTo` annot
+  ]
+
+exprToGraphviz :: Set Name -> AnnotatedExpr Integer -> Text
+exprToGraphviz _ (AnnExprInt n x) = node n $ tshow x
+exprToGraphviz _ (AnnExprString n s) = node n $ tshow s
+exprToGraphviz _ (AnnExprDouble n d) = node n $ tshow d
+exprToGraphviz _ (AnnExprConstructor n t a) =
   node n t
-exprToGraphviz (AnnExprVariable n v) = node n v
-exprToGraphviz (AnnExprApplication n f x) = fold
+exprToGraphviz functionNames (AnnExprVariable n v) =
+  if v `elem` functionNames then "" else node n v
+exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   [ node n "App"
-  , exprToGraphviz f
+  , exprToGraphviz functionNames f
   , annotation f `pointsTo` n
-  , exprToGraphviz x
+  , exprToGraphviz functionNames x
   , annotation x `pointsTo` n
   ]
-exprToGraphviz (AnnExprLet n name binding body) = fold
+exprToGraphviz functionNames (AnnExprLet n name binding body) = fold
   [ node n $ "Let (" <> name <> ")"
-  , exprToGraphviz binding
+  , exprToGraphviz functionNames binding
   , annotation binding `pointsTo` n
-  , exprToGraphviz body
+  , exprToGraphviz functionNames body
   , annotation body `pointsTo` n
   ]
-exprToGraphviz (AnnExprLambda n name expr) = fold
+exprToGraphviz functionNames (AnnExprLambda n name expr) = fold
   [ node n $ "Lam (" <> name <> ")"
-  , exprToGraphviz expr
+  , exprToGraphviz functionNames expr
   , annotation expr `pointsTo` n
   ]
-exprToGraphviz (AnnExprCase n expr alts) = fold
+exprToGraphviz functionNames (AnnExprCase n expr alts) = fold
   [ node n $ "Case"
-  , exprToGraphviz expr
+  , exprToGraphviz functionNames expr
   , annotation expr `pointsTo` n
   ]
   <> fold (Prelude.map toNodes alts)
   where
     toNodes (_n, _names, alt) = fold
-      [ exprToGraphviz alt
+      [ exprToGraphviz functionNames alt
       , annotation alt `pointsTo` n
       ]
