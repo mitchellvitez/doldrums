@@ -405,7 +405,7 @@ lookup' xs a = fromJust $ lookup a xs
 
 compileE :: GmCompiler
 compileE (ExprInt n) args = [Pushint $ fromIntegral n]
-compileE (ExprLet name def exp) args = compileLetRec compileE [(name, def)] exp args
+compileE (ExprLet bindings expr) args = compileLetRec compileE bindings expr args
 compileE (ExprApplication (ExprVariable "negate") e) args = compileE e args ++ [Neg]
 compileE (ExprApplication (ExprApplication (ExprApplication (ExprVariable "if") e0) e1) e2) args = compileE e0 args ++ [Cond (compileE e1 args) (compileE e2 args)]
 compileE e@(ExprApplication (ExprApplication (ExprVariable op) e0) e1) args = if op `elem` aDomain builtInDyadic
@@ -450,7 +450,7 @@ compileC (ExprString s) args = [Pushstring s]
 compileC (ExprApplication e1 e2) args = compileC e2 args ++
                             compileC e1 (argOffset 1 args) ++
                             [Mkap]
-compileC (ExprLet name def exp) args = compileLetRec compileC [(name,def)] exp args
+compileC (ExprLet bindings expr) args = compileLetRec compileC bindings expr args
 compileC (ExprConstructor tag arity) args = [Pushglobal $ toName tag]
   where
     toName :: Tag -> Name

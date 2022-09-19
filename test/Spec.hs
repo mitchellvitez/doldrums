@@ -58,7 +58,7 @@ main = hspec $ do
       testProgram "-3" "main = negate (id 3);"
 
     it "double negation" $ do
-      testProgram "3" "twice f = compose f f; main = twice negate 3;"
+      testProgram "3" "main = twice negate 3;"
 
     it "explicit double negation" $ do
       testProgram "3" "main = negate (negate 3);"
@@ -68,7 +68,6 @@ main = hspec $ do
 
     it "more complex program" $ do
       testProgram  "64" [r|
-id x = x;
 f p = (id p) * p;
 double n = let b = 2 in n * b;
 main = f (double 4);
@@ -89,13 +88,13 @@ four = ((1 + 6 - 2) * 4) / 5;
 
 pair x y f = f x y;
 fst p = p const;
-snd p = p const1;
+snd p = p const2;
 f x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)));
 main = f three four;
 |]
     it "lazy let" $ do
       testProgram "7" [r|
-main = let d = e, a = b, c = d, e = f, b = c in f;
+main = let d = e, a = b, f = 7, c = d, e = f, b = c in f;
 |]
 
     it "mutually recursive functions" $ do
@@ -149,9 +148,9 @@ main = negate $ negate 3;
       testParser parseDefinition "x = 2" ("x", ExprInt 2)
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let x = 2 in x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
-      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
-      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
+      testParser parseExprLet "let x = 2 in x" (ExprLet [("x", ExprInt 2)] (ExprVariable "x"))
+      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet [("x", ExprInt 2), ("y", ExprInt 3)] (ExprVariable "x"))
+      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet [("x", ExprInt 2)] (ExprLet [("y", ExprInt 3)] (ExprVariable "x")))
 
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x. x" (ExprLambda "x" (ExprVariable "x"))
@@ -209,7 +208,6 @@ four = ((1 + 6 - 2) * 4) / 5;
 data Pair 2;
 first p = case p of Pair a b -> a;
 second p = case p of Pair a b -> b;
-id x = x;
 
 f x y = first $ Pair (id x) (second $ Pair 3 y);
 
@@ -225,8 +223,6 @@ fac n = if (n == 0) 1 $ n * fac (n-1);
 
     it "bool" $ do
       testProgram "3" [r|
-data True 0 | False 0;
-
 myIf c t f = case c of
   True -> t,
   False -> f;
@@ -272,4 +268,11 @@ main = 20 - 14;
 f x = x;
 f y = y;
 main = f "hello";
+|]
+
+    it "two constructors with the same name" $ do
+      testProgramException [r|
+data False 0 | True 0;
+data True 2;
+main = True;
 |]

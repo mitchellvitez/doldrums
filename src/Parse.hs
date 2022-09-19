@@ -150,7 +150,7 @@ parseExprLet = do
   definitions <- parseDefinition `sepBy1` lexeme (char ',')
   lexeme $ string "in"
   body <- parseExpr
-  pure $ Prelude.foldr (\(name, expr) -> ExprLet name expr) body definitions
+  pure $ ExprLet definitions body
 
 parseExprCase :: Parser Expr
 parseExprCase = do

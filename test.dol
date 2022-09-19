@@ -1,1 +1,1 @@
-main = let d = e, a = b, c = d, e = f, b = c in f;
+main = let d = e, a = b, f = 87, c = d, e = f, b = c in f;

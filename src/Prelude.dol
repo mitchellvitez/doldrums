@@ -1,5 +1,4 @@
--- TODO: add type annotations syntax (id : a -> a)
--- until then all these should be in `primitiveTypes`
+-- types for these should be in `primitiveTypes`
 
 data True 0 | False 0;
 
@@ -12,7 +11,7 @@ twice f = compose f f;
 negate x = ~x;
 
 -- conditionals
-/* not x = if x False True; */
-/* and x y = if x y False; */
-/* or x y t if x True y; */
-/* xor x y = if x (not y) y; */
+not x = if x False True;
+and x y = if x y False;
+or x y = if x True y;
+xor x y = if x (not y) y;

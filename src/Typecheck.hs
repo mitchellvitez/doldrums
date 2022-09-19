@@ -23,8 +23,13 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Text.Megaparsec (SourcePos)
+import Text.Megaparsec (SourcePos, sourceLine, sourceColumn, unPos)
 import Data.Text (Text, pack)
+import qualified Data.Text as Text
+import System.Exit (exitFailure)
+
+putTextLn :: Text -> IO ()
+putTextLn = putStrLn . Text.unpack
 
 data Type
   = Int
@@ -62,6 +67,9 @@ combineSubstitutions a b = Map.map (apply a) b `Map.union` a
 
 -- environment of names and the schemes they correspond to
 newtype TypeEnv = TypeEnv (Map Name Scheme)
+
+instance Semigroup TypeEnv where
+  TypeEnv a <> TypeEnv b = TypeEnv (a <> b)
 
 remove :: TypeEnv -> Name -> TypeEnv
 remove (TypeEnv env) var = TypeEnv $ Map.delete var env
@@ -194,14 +202,20 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   (subs2, type2) <- typeCheckExpr (apply subs1 env) expr2
   subs3 <- unify sourcePos (apply subs2 type1) (type2 :-> typeVar)
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
--- TODO: let expressions should (like functions) create a bunch of type variables at the beginning then unify all of them mutually
-typeCheckExpr env (AnnExprLet _ name expr1 expr2) = do
-  (subs1, type1) <- typeCheckExpr env expr1
-  let TypeEnv env1 = remove env name
-      generalizedType = generalize (apply subs1 env) type1
-      env2 = TypeEnv $ Map.insert name generalizedType env1
-  (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
-  pure (subs1 `combineSubstitutions` subs2, type2)
+typeCheckExpr oldEnv (AnnExprLet _ bindings expr2) = do
+  newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] var)) $ map fst bindings
+  let env = oldEnv <> TypeEnv (Map.fromList newVars)
+  ty <- newTypeVar "a"
+  foldM (stuff env) (emptySubstitution, ty) bindings
+  where
+    stuff env (subs0, type0) (name, expr1) = do
+      (subs1, type1) <- typeCheckExpr env expr1
+      let TypeEnv env1 = remove env name
+          generalizedType = generalize (apply subs1 env) type1
+          env2 = TypeEnv $ Map.insert name generalizedType env1
+      (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
+      pure (subs1 `combineSubstitutions` subs2, type2)
+
 -- TODO: typecheck that all case alternatives unify to the same result type
 typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
   let altExprs = map (\(_, _, expr) -> expr) alts
@@ -220,9 +234,26 @@ infer env expr = do
   (subs, type_) <- typeCheckExpr (TypeEnv env) expr
   pure $ apply subs type_
 
-typeInference :: Program SourcePos -> IO (Either Text Type, TypeInstantiationState)
-typeInference program =
-  runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1) (getMainExpr program)
+typecheckingFailureHandler :: Text -> TypeCheckingException -> IO (Either Text Type, TypeInstantiationState)
+typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = do
+  putStrLn $ fold
+    [ "Typechecking failed at "
+    , show . unPos $ sourceLine sourcePos
+    , ":"
+    , show . unPos $ sourceColumn sourcePos
+    , " in the expression"
+    ]
+  let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
+  putStrLn $ line <> "v"
+  putTextLn $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
+  putStrLn $ line <> "^"
+  putTextLn msg
+  pure $ (Left "typechecking failed", TypeInstantiationState 0 Map.empty)
+  exitFailure -- comment this out to treat typechecking as a warning
+
+typeInference :: Program SourcePos -> Text ->  IO (Either Text Type, TypeInstantiationState)
+typeInference program programText =
+  (runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1) (getMainExpr program)) `catch` typecheckingFailureHandler programText
   where
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
     initialFunctionTypes (Program [] datas) _ = []
@@ -265,4 +296,8 @@ primitiveTypes = Map.fromList
   , ("!=", TypeVariable "prim28" :-> TypeVariable "prim28" :-> TypeVariable "prim25")
   , (">=", TypeVariable "prim29" :-> TypeVariable "prim29" :-> TypeVariable "prim25")
   , ("&&", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
+  , ("and", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
+  , ("not", TypeVariable "prim25" :-> TypeVariable "prim25")
+  , ("or", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
+  , ("xor", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
   ]

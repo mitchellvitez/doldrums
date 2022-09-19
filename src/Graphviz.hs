@@ -2,6 +2,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Graphviz
   ( toGraphviz
@@ -34,6 +35,9 @@ tshow = T.pack . show
 
 node :: Integer -> Text -> Text
 node n label = "\n  " <> tshow n <> " [label=\"" <> label <> "\"]"
+
+boxNode :: Integer -> Text -> Text
+boxNode n label = "\n  " <> tshow n <> " [label=\"" <> label <> "\", shape=\"box\"]"
 
 pointsTo :: Integer -> Integer -> Text
 pointsTo a b = "\n  " <> tshow a <> " -> " <> tshow b
@@ -96,11 +100,11 @@ labelExpr (ExprLambda name expr) = do
   n <- getNext
   labeledExpr <- labelExpr expr
   pure $ AnnExprLambda n name labeledExpr
-labelExpr (ExprLet name binding body) = do
+labelExpr (ExprLet bindings body) = do
   n <- getNext
-  labeledBinding <- labelExpr binding
+  labeledBindings <- mapM (\(name, binding) -> (name,) <$> labelExpr binding) bindings
   labeledBody <- labelExpr body
-  pure $ AnnExprLet n name labeledBinding labeledBody
+  pure $ AnnExprLet n labeledBindings labeledBody
 labelExpr (ExprCase scrutinee alts) = do
   n <- getNext
   labeledScrutinee <- labelExpr scrutinee
@@ -116,7 +120,7 @@ programToGraphviz (Program funcs datas) =
 
 functionToGraphviz :: Set Name -> Function Integer -> Text
 functionToGraphviz functionNames (Function annot name args body) = fold
-  [ node annot name
+  [ boxNode annot name
   , exprToGraphviz functionNames body
   , annotation body `pointsTo` annot
   ]
@@ -136,13 +140,17 @@ exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   , exprToGraphviz functionNames x
   , annotation x `pointsTo` n
   ]
-exprToGraphviz functionNames (AnnExprLet n name binding body) = fold
-  [ node n $ "Let (" <> name <> ")"
-  , exprToGraphviz functionNames binding
-  , annotation binding `pointsTo` n
-  , exprToGraphviz functionNames body
+exprToGraphviz functionNames (AnnExprLet n bindings body) = fold $
+  map toGraphviz bindings <>
+  [ exprToGraphviz functionNames body
   , annotation body `pointsTo` n
   ]
+  where
+    toGraphviz (name, binding) = fold
+      [ node n $ "Let (" <> name <> ")"
+      , exprToGraphviz functionNames binding
+      , annotation binding `pointsTo` n
+      ]
 exprToGraphviz functionNames (AnnExprLambda n name expr) = fold
   [ node n $ "Lam (" <> name <> ")"
   , exprToGraphviz functionNames expr
