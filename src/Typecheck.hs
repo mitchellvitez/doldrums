@@ -206,23 +206,30 @@ typeCheckExpr oldEnv (AnnExprLet _ bindings expr2) = do
   newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] var)) $ map fst bindings
   let env = oldEnv <> TypeEnv (Map.fromList newVars)
   ty <- newTypeVar "a"
-  foldM (stuff env) (emptySubstitution, ty) bindings
+  foldM (foldStep env) (emptySubstitution, ty) bindings
   where
-    stuff env (subs0, type0) (name, expr1) = do
+    foldStep env (subs0, type0) (name, expr1) = do
       (subs1, type1) <- typeCheckExpr env expr1
       let TypeEnv env1 = remove env name
           generalizedType = generalize (apply subs1 env) type1
           env2 = TypeEnv $ Map.insert name generalizedType env1
       (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
       pure (subs1 `combineSubstitutions` subs2, type2)
-
--- TODO: typecheck that all case alternatives unify to the same result type
 typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
-  let altExprs = map (\(_, _, expr) -> expr) alts
-      firstAltExpr = (\(_, _, expr) -> expr) $ head alts
-  altExprTypes :: [(Substitution, Type)] <- mapM (typeCheckExpr env) altExprs
-  firstExpr <- typeCheckExpr env firstAltExpr
-  foldM foldAction firstExpr altExprTypes
+  let toNestedLambdas :: CaseAlternative SourcePos -> (Int, AnnotatedExpr SourcePos)
+      toNestedLambdas (tag, args, body) =
+        ( length args
+        , foldl (\expr name -> AnnExprLambda sourcePos name expr) body args
+        )
+  let removeArgsFromType :: Int -> Type -> Type
+      removeArgsFromType 0 t = t
+      removeArgsFromType n (a :-> b) = removeArgsFromType (n-1) b
+      removeArgsFromType _ _ = error "bad case pattern match"
+  let altExprs = map toNestedLambdas alts
+  altExprTypes :: [(Substitution, Type)] <- forM altExprs $ \(numArgs, expr) -> do
+    (s, t) <- typeCheckExpr env expr
+    pure (s, removeArgsFromType numArgs t)
+  foldM foldAction (head altExprTypes) altExprTypes
   where
     foldAction :: (Substitution, Type) -> (Substitution, Type) -> TypeInstantiation (Substitution, Type)
     foldAction (s1, t1) (s2, t2) = do
@@ -252,9 +259,12 @@ typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = d
   exitFailure -- comment this out to treat typechecking as a warning
 
 typeInference :: Program SourcePos -> Text ->  IO (Either Text Type, TypeInstantiationState)
-typeInference program programText =
-  (runTypeInstantiation $ infer (Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1) (getMainExpr program)) `catch` typecheckingFailureHandler programText
+typeInference program programText = do
+  -- convert to single-expression form (all top-level functions become lets in main) then typecheck
+  (runTypeInstantiation . infer initialEnvironment $ singleExprForm program)
+    `catch` typecheckingFailureHandler programText
   where
+    initialEnvironment = Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
     initialFunctionTypes (Program [] datas) _ = []
     initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
@@ -265,6 +275,17 @@ typeInference program programText =
       TypeVariable $ "f" <> tshow n <> "arg0"
     functionType n args = do
       (TypeVariable $ "f" <> tshow n <> "arg" <> tshow args) :-> (functionType n (args - 1))
+
+    singleExprForm :: Program SourcePos -> AnnotatedExpr SourcePos
+    singleExprForm program@(Program funcs _) =
+      AnnExprLet (annotation $ getMainExpr program) (toBindings funcs) (getMainExpr program)
+      where
+        toBindings :: [Function a] -> [(Name, AnnotatedExpr a)]
+        toBindings = map (\func -> (name func, toNestedLambdas func))
+
+        toNestedLambdas :: Function a -> AnnotatedExpr a
+        toNestedLambdas (Function annot name args body) =
+          foldl (\expr name -> AnnExprLambda annot name expr) body args
 
     getMainExpr :: Program SourcePos -> AnnotatedExpr SourcePos
     getMainExpr (Program [] datas) = error "Couldn't find main"

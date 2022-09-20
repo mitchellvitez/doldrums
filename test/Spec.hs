@@ -276,3 +276,12 @@ data False 0 | True 0;
 data True 2;
 main = True;
 |]
+
+    it "case with different result types" $ do
+      testProgramException [r|
+f c = case c of
+  True -> "test",
+  False -> 7;
+
+main = f False;
+|]

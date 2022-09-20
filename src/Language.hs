@@ -22,6 +22,7 @@ data Program a = Program
   deriving Eq
 deriving instance Show (Program Void)
 deriving instance Show (Program SourcePos)
+deriving instance Show (Program ())
 
 instance Semigroup (Program a) where
   Program f1 d1 <> Program f2 d2 = Program (f1 <> f2) (d1 <> d2)
@@ -42,6 +43,7 @@ data Function a = Function
   deriving Eq
 deriving instance Show (Function Void)
 deriving instance Show (Function SourcePos)
+deriving instance Show (Function ())
 
 instance Functor Function where
   fmap f (Function annot name args body) = Function (f annot) name args (f <$> body)
@@ -65,6 +67,7 @@ data AnnotatedExpr a
   | AnnExprCase a (AnnotatedExpr a) [CaseAlternative a]
   deriving Eq
 deriving instance Show (AnnotatedExpr SourcePos)
+deriving instance Show (AnnotatedExpr ())
 
 annotation :: AnnotatedExpr a -> a
 annotation (AnnExprInt annot _)           = annot

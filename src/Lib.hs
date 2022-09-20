@@ -65,8 +65,7 @@ runBase programText strat isDebug = do
           let program = astFixes (prelude <> unnormalizedBadAritiesProgram)
           let programWithoutPrelude = astFixes unnormalizedBadAritiesProgram
 
-          debug isDebug "AST" . print $ programWithoutPrelude
-
+          debug isDebug "AST" . print $ fmap (const ()) unnormalizedBadAritiesProgram
           debug isDebug "GRAPHVIZ" . putStrLn . unpack . toGraphviz $ const void <$> programWithoutPrelude
 
           (types, state) <- typeInference program programText
