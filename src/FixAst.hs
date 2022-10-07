@@ -1,9 +1,11 @@
 module FixAst
   ( astFixes
+  , singleExprForm
   )
 where
 
 import Language
+import Data.List (foldl')
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -21,8 +23,8 @@ fixExprArities _ e@(AnnExprInt _ _) = e
 fixExprArities _ e@(AnnExprString _ _) = e
 fixExprArities _ e@(AnnExprDouble _ _) = e
 fixExprArities datas (AnnExprApplication a f x) = AnnExprApplication a (fixExprArities datas f) (fixExprArities datas x)
-fixExprArities datas (AnnExprLet a bindings body) =
-  AnnExprLet a (map (\(name, binding) -> (name, fixExprArities datas binding)) bindings) (fixExprArities datas body)
+fixExprArities datas (AnnExprLet a name binding body) =
+  AnnExprLet a name (fixExprArities datas binding) (fixExprArities datas body)
 fixExprArities datas (AnnExprConstructor a tag _) = AnnExprConstructor a tag $ lookupTag datas tag
 fixExprArities datas (AnnExprLambda a name expr) = AnnExprLambda a name (fixExprArities datas expr)
 fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) alters
@@ -55,3 +57,21 @@ findDuplicateName seen (x:xs) =
 
 astFixes :: Program a -> Program a
 astFixes = fixArities . checkUniqueFunctions . checkUniqueConstructors
+
+singleExprForm :: Program a -> AnnotatedExpr a
+singleExprForm program@(Program funcs _) =
+  foldl' toSingle (getMainExpr program) (filter (\(Function _ name _ _) -> name /= "main") funcs)
+
+  where
+    toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
+    toSingle expr func = AnnExprLet (annotation expr) (name func) (toNestedLambdas func) expr
+
+    toNestedLambdas :: Function a -> AnnotatedExpr a
+    toNestedLambdas (Function annot name args body) =
+      foldr (AnnExprLambda annot) body args
+
+getMainExpr :: Program a -> AnnotatedExpr a
+getMainExpr (Program [] datas) = error "Couldn't find main"
+getMainExpr (Program (Function _ name _ body : restFuncs) datas) = case name of
+  "main" -> body
+  _ -> getMainExpr $ Program restFuncs datas

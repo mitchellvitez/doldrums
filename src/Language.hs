@@ -11,7 +11,8 @@ module Language
   )
 where
 
-import Data.Text (Text)
+import Data.List (intercalate)
+import Data.Text (Text, unpack)
 import Data.Void
 import Text.Megaparsec (SourcePos)
 
@@ -22,7 +23,9 @@ data Program a = Program
   deriving Eq
 deriving instance Show (Program Void)
 deriving instance Show (Program SourcePos)
-deriving instance Show (Program ())
+
+instance Show (Program ()) where
+  show (Program funcs decls) = "data declarations: " <> show decls <> "\n" <> intercalate "\n" (map show funcs)
 
 instance Semigroup (Program a) where
   Program f1 d1 <> Program f2 d2 = Program (f1 <> f2) (d1 <> d2)
@@ -43,13 +46,20 @@ data Function a = Function
   deriving Eq
 deriving instance Show (Function Void)
 deriving instance Show (Function SourcePos)
-deriving instance Show (Function ())
+
+instance Show (Function ()) where
+  show (Function _ name args body) =
+    unpack name <> " " <> intercalate " " (map unpack args) <> " = " <> show body
 
 instance Functor Function where
   fmap f (Function annot name args body) = Function (f annot) name args (f <$> body)
 
 -- case name, variables to unpack, body
-type CaseAlternative a = (Tag, [Name], AnnotatedExpr a)
+data CaseAlternative a = Alternative Tag [Name] (AnnotatedExpr a)
+  deriving Eq
+deriving instance Show (CaseAlternative SourcePos)
+deriving instance Show (CaseAlternative Void)
+deriving instance Show (CaseAlternative ())
 
 type Name = Text
 type Tag = Text
@@ -62,12 +72,11 @@ data AnnotatedExpr a
   | AnnExprDouble a Double
   | AnnExprConstructor a Tag Arity
   | AnnExprApplication a (AnnotatedExpr a) (AnnotatedExpr a)
-  | AnnExprLet a [(Name, AnnotatedExpr a)] (AnnotatedExpr a)
+  | AnnExprLet a Name (AnnotatedExpr a) (AnnotatedExpr a)
   | AnnExprLambda a Name (AnnotatedExpr a)
   | AnnExprCase a (AnnotatedExpr a) [CaseAlternative a]
   deriving Eq
 deriving instance Show (AnnotatedExpr SourcePos)
-deriving instance Show (AnnotatedExpr ())
 
 annotation :: AnnotatedExpr a -> a
 annotation (AnnExprInt annot _)           = annot
@@ -76,7 +85,7 @@ annotation (AnnExprApplication annot _ _) = annot
 annotation (AnnExprString annot _)        = annot
 annotation (AnnExprDouble annot _)        = annot
 annotation (AnnExprConstructor annot _ _) = annot
-annotation (AnnExprLet annot _ _ )       = annot
+annotation (AnnExprLet annot _ _ _)       = annot
 annotation (AnnExprLambda annot _ _)      = annot
 annotation (AnnExprCase annot _ _)        = annot
 
@@ -87,9 +96,20 @@ instance Functor AnnotatedExpr where
   fmap f (AnnExprString a s) = AnnExprString (f a) s
   fmap f (AnnExprDouble a d) = AnnExprDouble (f a) d
   fmap f (AnnExprConstructor a tag arity) = AnnExprConstructor (f a) tag arity
-  fmap f (AnnExprLet a bindings body) = AnnExprLet (f a) (map (\(name, binding) -> (name, f <$> binding))bindings) (f <$> body)
+  fmap f (AnnExprLet a name binding body) = AnnExprLet (f a) name (f <$> binding) (f <$> body)
   fmap f (AnnExprLambda a name expr) = AnnExprLambda (f a) name (f <$> expr)
-  fmap f (AnnExprCase a expr alters) = AnnExprCase (f a) (f <$> expr) (map (\(n, name, expr) -> (n, name, f <$> expr)) alters)
+  fmap f (AnnExprCase a expr alters) = AnnExprCase (f a) (f <$> expr) (map (\(Alternative n name expr) -> (Alternative n name (f <$> expr))) alters)
+
+instance Show (AnnotatedExpr ()) where
+  show (AnnExprVariable _ name) = show name
+  show (AnnExprInt _ n) = show n
+  show (AnnExprString _ s) = show s
+  show (AnnExprDouble _ d) = show d
+  show (AnnExprConstructor _ tag arity) = "(Constr " <> show tag <> " " <> show arity <> ")"
+  show (AnnExprApplication _ a b) = "(App " <> show a <> " " <> show b <> ")"
+  show (AnnExprLet _ name binding body) = "(Let " <> show name <> " " <> show binding <> " " <> show body <> ")"
+  show (AnnExprLambda _ name expr) = "(Lam " <> show name <> " " <> show expr <> ")"
+  show (AnnExprCase _ expr alts) = "(Case " <> show expr <> " " <> show alts <> ")"
 
 -- unparametrized AST, recovered by the below
 -- data Expr
@@ -112,7 +132,7 @@ instance Show Expr where
   show (ExprDouble d) = show d
   show (ExprConstructor tag arity) = "(Constr " <> show tag <> "," <> show arity <> ")"
   show (ExprApplication a b) = "(App " <> show a <> " " <> show b <> ")"
-  show (ExprLet bindings body) = "(Let " <> show bindings <> " " <> show body <> ")"
+  show (ExprLet name binding body) = "(Let " <> show name <> " " <> show binding <> " " <> show body <> ")"
   show (ExprLambda name expr) = "(Lam " <> show name <> " " <> show expr <> ")"
   show (ExprCase expr alts) = "(Case " <> show expr <> " " <> show alts <> ")"
   show _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
@@ -151,9 +171,9 @@ pattern ExprLambda :: Name -> Expr -> Expr
 pattern ExprLambda name expr <- AnnExprLambda _ name expr
   where ExprLambda name expr = AnnExprLambda void name expr
 
-pattern ExprLet :: [(Name, Expr)] -> Expr -> Expr
-pattern ExprLet bindings body <- AnnExprLet _ bindings body
-  where ExprLet bindings body = AnnExprLet void bindings body
+pattern ExprLet :: Name -> Expr -> Expr -> Expr
+pattern ExprLet name binding body <- AnnExprLet _ name binding body
+  where ExprLet name binding body = AnnExprLet void name binding body
 
 pattern ExprCase :: Expr -> [CaseAlternative Void] -> Expr
 pattern ExprCase expr alters <- AnnExprCase _ expr alters

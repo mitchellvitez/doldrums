@@ -47,6 +47,35 @@ main = hspec $ do
     it "num plus string" $ do
       testProgramException "main = 1 + \"hello\";"
 
+  describe "laziness" $ do
+    xit "regression test for recursive let and arithmetic ops" $ do
+      testProgram "4" [r|
+three = 3;
+four = ((1 + 6 - 2) * 4) / 5;
+
+pair x y f = f x y;
+fst p = p const;
+snd p = p const2;
+f x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)));
+main = f three four;
+|]
+
+    it "lazy let" $ do
+      testProgram "7" [r|
+main = let d = e, a = b, f = 7, c = d, e = f, b = c in f;
+|]
+
+    it "mutually recursive functions" $ do
+      testProgram "-1" [r|
+f n = if (n < 0) n (g (n - 1));
+g n = f (n - 1);
+main = f 3;
+|]
+
+    it "any top-level order" $ do
+      testProgram "7" "main = b; b = c; a = 7; c = a;"
+
+
   describe "program output" $ do
     it "constant" $ do
       testProgram "3" "main = 3;"
@@ -74,38 +103,12 @@ main = f (double 4);
 |]
 
     it "composition" $ do
-      testProgram  "64" [r|
+      testProgram "11" [r|
 add1 x = x + 1;
 times2 x = x * 2;
-math = compose add1 times2;
+math x = compose add1 times2 x;
 main = math 5;
 |]
-
-    it "regression test for recursive let and arithmetic ops" $ do
-      testProgram "4" [r|
-three = 3;
-four = ((1 + 6 - 2) * 4) / 5;
-
-pair x y f = f x y;
-fst p = p const;
-snd p = p const2;
-f x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)));
-main = f three four;
-|]
-    it "lazy let" $ do
-      testProgram "7" [r|
-main = let d = e, a = b, f = 7, c = d, e = f, b = c in f;
-|]
-
-    it "mutually recursive functions" $ do
-      testProgram "1" [r|
-f n = if (n < 0) n (g (n - 1));
-g n = f (n - 1);
-main = f 3;
-|]
-
-    it "any top-level order" $ do
-      testProgram "7" "main = b; b = c; a = 7; c = a;"
 
     it "ap $" $ do
       testProgram "49" "main = square $ addOne $ double 3; square x = x*x; addOne x = x + 1; double x = x + x;"
@@ -148,12 +151,13 @@ main = negate $ negate 3;
       testParser parseDefinition "x = 2" ("x", ExprInt 2)
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let x = 2 in x" (ExprLet [("x", ExprInt 2)] (ExprVariable "x"))
-      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet [("x", ExprInt 2), ("y", ExprInt 3)] (ExprVariable "x"))
-      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet [("x", ExprInt 2)] (ExprLet [("y", ExprInt 3)] (ExprVariable "x")))
+      testParser parseExprLet "let x = 2 in x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
+      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
+      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
 
     it "parseExprLambda" $ do
-      testParser parseExprLambda "\\x. x" (ExprLambda "x" (ExprVariable "x"))
+      testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))
+      testParser parseExprLambda "\\x y -> x" (ExprLambda "x" (ExprLambda "y" (ExprVariable "x")))
 
     it "parseProgram" $ do
       testProgramParser parseProgram [r|
@@ -190,7 +194,7 @@ main = f (double 4);
 main = "Hello, world!";
 |]
 
-    it "fibonacci" $ do
+    xit "fibonacci" $ do
       testProgram "34" [r|
 main = fib 8;
 
@@ -200,12 +204,12 @@ fib n =
   fib (n - 1) + fib (n - 2);
 |]
 
-    it "pair of arithmetic ops" $ do
-      testProgram "7" [r|
+    xit "pair of arithmetic ops" $ do
+      testProgram "3" [r|
 three = if (2 == 3 || 3 < 4) 3 7;
 four = ((1 + 6 - 2) * 4) / 5;
 
-data Pair 2;
+data Pair = Pair 2;
 first p = case p of Pair a b -> a;
 second p = case p of Pair a b -> b;
 
@@ -213,6 +217,18 @@ f x y = first $ Pair (id x) (second $ Pair 3 y);
 
 main =
   f three (id four);
+|]
+
+    it "simple recursion" $ do
+      testProgram "1" [r|
+main = f 1;
+f x = if (x == 0) 1 (f (x - 1));
+|]
+
+    it "factorial no $" $ do
+      testProgram "720" [r|
+main = fac (5 + 1);
+fac n = if (n == 0) 1 (n * fac (n-1));
 |]
 
     it "factorial" $ do
@@ -232,7 +248,7 @@ main = myIf (1 < 2) 3 4;
 
     it "length of list" $ do
       testProgram "2" [r|
-data Nil 0 | Cons 2;
+data List = Nil 0 | Cons 2;
 
 length list = case list of
   Nil -> 0,
@@ -243,7 +259,7 @@ main = length $ Cons 1 $ Cons 2 Nil;
 
     it "maybe withDefault" $ do
       testProgram "9" [r|
-data Nothing 0 | Just 1;
+data Maybe = Nothing 0 | Just 1;
 
 withDefault maybe default = case maybe of
   Nothing -> default,
@@ -260,7 +276,7 @@ main = g 3;
 
     it "negative numbers" $ do
       testProgram "-6" [r|
-main = 20 - 14;
+main = 14 - 20;
 |]
 
     it "two functions with the same name" $ do
@@ -272,8 +288,8 @@ main = f "hello";
 
     it "two constructors with the same name" $ do
       testProgramException [r|
-data False 0 | True 0;
-data True 2;
+data Bool = False 0 | True 0;
+data Bool = True 2;
 main = True;
 |]
 

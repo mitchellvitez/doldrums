@@ -11,6 +11,7 @@ module Typecheck
 where
 
 import Language
+import FixAst (singleExprForm)
 
 import Control.Monad.State
 import Control.Monad.Except
@@ -184,9 +185,11 @@ typeCheckExpr _ (AnnExprConstructor _ _ arity) = do
       pure $ typeVar :-> recursedType
 typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
   case Map.lookup name env of
-    Nothing ->
-      throw . TypeCheckingException sourcePos $
-        "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
+    Nothing -> do
+      ty <- newTypeVar "a"
+      pure (emptySubstitution, ty)
+      -- throw . TypeCheckingException sourcePos $
+      --   "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
     Just ty -> do
       instantiatedType <- instantiate ty
       pure (emptySubstitution, instantiatedType)
@@ -202,7 +205,8 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   (subs2, type2) <- typeCheckExpr (apply subs1 env) expr2
   subs3 <- unify sourcePos (apply subs2 type1) (type2 :-> typeVar)
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
-typeCheckExpr oldEnv (AnnExprLet _ bindings expr2) = do
+typeCheckExpr oldEnv (AnnExprLet sourcePos name binding expr2) = do
+  let bindings = [(name, binding)]
   newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] var)) $ map fst bindings
   let env = oldEnv <> TypeEnv (Map.fromList newVars)
   ty <- newTypeVar "a"
@@ -217,9 +221,9 @@ typeCheckExpr oldEnv (AnnExprLet _ bindings expr2) = do
       pure (subs1 `combineSubstitutions` subs2, type2)
 typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
   let toNestedLambdas :: CaseAlternative SourcePos -> (Int, AnnotatedExpr SourcePos)
-      toNestedLambdas (tag, args, body) =
+      toNestedLambdas (Alternative tag args body) =
         ( length args
-        , foldl (\expr name -> AnnExprLambda sourcePos name expr) body args
+        , foldr (\name expr -> AnnExprLambda sourcePos name expr) body args
         )
   let removeArgsFromType :: Int -> Type -> Type
       removeArgsFromType 0 t = t
@@ -275,23 +279,6 @@ typeInference program programText = do
       TypeVariable $ "f" <> tshow n <> "arg0"
     functionType n args = do
       (TypeVariable $ "f" <> tshow n <> "arg" <> tshow args) :-> (functionType n (args - 1))
-
-    singleExprForm :: Program SourcePos -> AnnotatedExpr SourcePos
-    singleExprForm program@(Program funcs _) =
-      AnnExprLet (annotation $ getMainExpr program) (toBindings funcs) (getMainExpr program)
-      where
-        toBindings :: [Function a] -> [(Name, AnnotatedExpr a)]
-        toBindings = map (\func -> (name func, toNestedLambdas func))
-
-        toNestedLambdas :: Function a -> AnnotatedExpr a
-        toNestedLambdas (Function annot name args body) =
-          foldl (\expr name -> AnnExprLambda annot name expr) body args
-
-    getMainExpr :: Program SourcePos -> AnnotatedExpr SourcePos
-    getMainExpr (Program [] datas) = error "Couldn't find main"
-    getMainExpr (Program (Function _ name _ body : restFuncs) datas) = case name of
-      "main" -> body
-      _ -> getMainExpr $ Program restFuncs datas
 
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList

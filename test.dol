@@ -1,4 +1,4 @@
-data Nil 0 | Cons 2;
+data List = Nil 0 | Cons 2;
 
 length list = case list of
   Nil -> 0,

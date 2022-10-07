@@ -100,17 +100,17 @@ labelExpr (ExprLambda name expr) = do
   n <- getNext
   labeledExpr <- labelExpr expr
   pure $ AnnExprLambda n name labeledExpr
-labelExpr (ExprLet bindings body) = do
+labelExpr (ExprLet name binding body) = do
   n <- getNext
-  labeledBindings <- mapM (\(name, binding) -> (name,) <$> labelExpr binding) bindings
+  labeledBinding <- labelExpr binding
   labeledBody <- labelExpr body
-  pure $ AnnExprLet n labeledBindings labeledBody
+  pure $ AnnExprLet n name labeledBinding labeledBody
 labelExpr (ExprCase scrutinee alts) = do
   n <- getNext
   labeledScrutinee <- labelExpr scrutinee
-  labeledAlts <- forM alts $ \(n, vars, expr) -> do
+  labeledAlts <- forM alts $ \(Alternative n vars expr) -> do
     labeledExpr <- labelExpr expr
-    pure (n, vars, labeledExpr)
+    pure $ Alternative n vars labeledExpr
   pure $ AnnExprCase n labeledScrutinee labeledAlts
 labelExpr _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
@@ -140,13 +140,13 @@ exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   , exprToGraphviz functionNames x
   , annotation x `pointsTo` n
   ]
-exprToGraphviz functionNames (AnnExprLet n bindings body) = fold $
-  map toGraphviz bindings <>
-  [ exprToGraphviz functionNames body
+exprToGraphviz functionNames (AnnExprLet n name binding body) = fold $
+  [ toGraphviz name binding
+  , exprToGraphviz functionNames body
   , annotation body `pointsTo` n
   ]
   where
-    toGraphviz (name, binding) = fold
+    toGraphviz name binding = fold
       [ node n $ "Let (" <> name <> ")"
       , exprToGraphviz functionNames binding
       , annotation binding `pointsTo` n
@@ -163,7 +163,7 @@ exprToGraphviz functionNames (AnnExprCase n expr alts) = fold
   ]
   <> fold (Prelude.map toNodes alts)
   where
-    toNodes (_n, _names, alt) = fold
+    toNodes (Alternative _n _names alt) = fold
       [ exprToGraphviz functionNames alt
       , annotation alt `pointsTo` n
       ]

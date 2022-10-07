@@ -2,6 +2,7 @@ module Parse where
 
 import Language
 
+import Data.List as List (foldr)
 import Control.Monad.Combinators.Expr
 import Data.Text
 import Data.Void
@@ -52,6 +53,8 @@ parseFunction = do
 parseDataDeclaration :: Parser DataDeclaration
 parseDataDeclaration = do
   lexeme $ string "data"
+  _TODO <- parseExprConstructor
+  lexeme $ char '='
   constructors <- parseConstructorDeclaration `sepBy1` lexeme (char '|')
   pure $ DataDeclaration constructors
 
@@ -150,7 +153,7 @@ parseExprLet = do
   definitions <- parseDefinition `sepBy1` lexeme (char ',')
   lexeme $ string "in"
   body <- parseExpr
-  pure $ ExprLet definitions body
+  pure $ List.foldr (\(name, binding) -> ExprLet name binding) body definitions
 
 parseExprCase :: Parser Expr
 parseExprCase = do
@@ -160,13 +163,13 @@ parseExprCase = do
   alternatives <- parseCaseAlternative `sepBy1` lexeme (char ',')
   pure $ ExprCase scrutinee alternatives
 
-parseCaseAlternative :: Parser (Tag, [Name], Expr)
+parseCaseAlternative :: Parser (CaseAlternative Void)
 parseCaseAlternative = do
   caseName <- parseCaseName
   names <- many parseName
   lexeme $ string "->"
   expr <- parseExpr
-  pure (caseName, names, expr)
+  pure $ Alternative caseName names expr
 
 parseDefinition :: Parser (Name, Expr)
 parseDefinition = do
@@ -179,7 +182,7 @@ parseExprLambda :: Parser Expr
 parseExprLambda = do
   lexeme $ char '\\'
   abstractions <- some parseName
-  lexeme $ char '.'
+  lexeme $ string "->"
   body <- parseExpr
   pure $ Prelude.foldr ExprLambda body abstractions
 

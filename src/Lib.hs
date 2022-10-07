@@ -10,13 +10,13 @@ import Parse (parseProgram)
 import Typecheck
 import FixAst
 import Language
-import GMachine
+import Interpret
+-- import GMachine
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
-import Data.Map (Map)
 import qualified Data.Map as Map
-import Text.Megaparsec (parse, errorBundlePretty, SourcePos)
+import Text.Megaparsec (parse, errorBundlePretty)
 import qualified Data.Text as Text
 
 putTextLn :: Text -> IO ()
@@ -65,8 +65,8 @@ runBase programText strat isDebug = do
           let program = astFixes (prelude <> unnormalizedBadAritiesProgram)
           let programWithoutPrelude = astFixes unnormalizedBadAritiesProgram
 
-          debug isDebug "AST" . print $ fmap (const ()) unnormalizedBadAritiesProgram
-          debug isDebug "GRAPHVIZ" . putStrLn . unpack . toGraphviz $ const void <$> programWithoutPrelude
+          debug isDebug "AST" . print $ const () <$> programWithoutPrelude
+          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const void <$> programWithoutPrelude
 
           (types, state) <- typeInference program programText
           debug isDebug "TYPE" $ do
@@ -76,13 +76,18 @@ runBase programText strat isDebug = do
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
-          let
-            toPlainExprs :: [Function SourcePos] -> [(Name, [Name], Expr)]
-            toPlainExprs = map (\(Function _ name args body) -> (name, args, annotatedToExpr body))
-
-            constructorArities :: Map Tag Arity
-            constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations program
-          let result = gMachineCore constructorArities $ toPlainExprs $ functions program
-          -- debug isDebug "EVALUATION" . putTextLn $ gMachineEval result
           debug isDebug "OUTPUT" $ pure ()
-          strat $ gMachineOutput result
+          strat . interpret . singleExprForm $ fmap (const void) program
+
+          -- G Machine
+
+          -- let
+          --   toPlainExprs :: [Function SourcePos] -> [(Name, [Name], Expr)]
+          --   toPlainExprs = map (\(Function _ name args body) -> (name, args, annotatedToExpr body))
+
+          --   constructorArities :: Map Tag Arity
+          --   constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations program
+          -- let result = gMachineCore constructorArities $ toPlainExprs $ functions program
+          -- debug isDebug "EVALUATION" . putTextLn $ gMachineEval result
+          -- debug isDebug "OUTPUT" $ pure ()
+          -- strat $ gMachineOutput result

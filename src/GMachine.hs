@@ -405,7 +405,7 @@ lookup' xs a = fromJust $ lookup a xs
 
 compileE :: GmCompiler
 compileE (ExprInt n) args = [Pushint $ fromIntegral n]
-compileE (ExprLet bindings expr) args = compileLetRec compileE bindings expr args
+compileE (ExprLet name binding expr) args = compileLetRec compileE [(name, binding)] expr args
 compileE (ExprApplication (ExprVariable "negate") e) args = compileE e args ++ [Neg]
 compileE (ExprApplication (ExprApplication (ExprApplication (ExprVariable "if") e0) e1) e2) args = compileE e0 args ++ [Cond (compileE e1 args) (compileE e2 args)]
 compileE e@(ExprApplication (ExprApplication (ExprVariable op) e0) e1) args = if op `elem` aDomain builtInDyadic
@@ -427,7 +427,7 @@ compileE' offset expr args =
 
 compileD :: (Int -> GmCompiler) -> [CaseAlternative Void] -> GmEnvironment -> [(Tag, GmCode)]
 compileD comp alts env
-  = [(tag, comp (length names) body (zip names [0..] ++ argOffset (length names) env)) | (tag, names, body) <- alts]
+  = [(tag, comp (length names) body (zip names [0..] ++ argOffset (length names) env)) | Alternative tag names body <- alts]
 
 decompose :: Expr -> (Expr, [Expr])
 decompose e = decompose' e []
@@ -450,7 +450,7 @@ compileC (ExprString s) args = [Pushstring s]
 compileC (ExprApplication e1 e2) args = compileC e2 args ++
                             compileC e1 (argOffset 1 args) ++
                             [Mkap]
-compileC (ExprLet bindings expr) args = compileLetRec compileC bindings expr args
+compileC (ExprLet name binding expr) args = compileLetRec compileC [(name, binding)] expr args
 compileC (ExprConstructor tag arity) args = [Pushglobal $ toName tag]
   where
     toName :: Tag -> Name
