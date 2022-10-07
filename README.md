@@ -102,31 +102,6 @@ So will this one, since you can't apply literals:
 main = 1 2 3;
 ```
 
-The typechecking mechanism doesn't currently support recursion (however, the evaluator does). It's possible to work around these kinds of type errors by e.g. adding `fib : Int -> Int` to the listing of `primitiveTypes`.
-
-```
-fib n =
-  if (n == 0) 1 $
-  if (n == 1) 1 $
-  fib (n - 1) + fib (n - 2);
-
-main = fib 10;
-```
-
-This principle also blocks mutual recursion from typechecking.
-
-```
-g = f;
-f = g;
-main = f;
-```
-
-The opposite is true for lambda expressions: they parse and typecheck just fine, but the evaluator can't currently instantiate them.
-
-```
-main = (\x y. x) 3 4;
-```
-
 ### Operator Precedence
 
 Higher numbers mean higher precedence. All operators are binary (they have both a left and a right hand side).
@@ -156,4 +131,4 @@ Precedence | Associativity | Operator
 
 ## How can I do this?
 
-I'd recommend using Megaparsec or another parsing library to make that part easier to write. I got the Template Instantiation material (`src/Template.hs`) from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add the initial typechecking. Some issues were debugged more quickly thanks to help from friends. [Algorithm W Step by Step](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.65.7733&rep=rep1&type=pdf) helped me upgrade the typechecking to Hindley-Milner style inference.
+I'd recommend using Megaparsec or another parsing library to make that part easier to write. I learned a lot of this from [Implementing Functional Languages: a tutorial](https://www.microsoft.com/en-us/research/publication/implementing-functional-languages-a-tutorial). The talk [Statically Typed Interpreters](https://www.youtube.com/watch?v=Ci2KF5hVuEs) was helpful when figuring out how to add the initial typechecking. Some issues were debugged more quickly thanks to help from friends. [Algorithm W Step by Step](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.65.7733&rep=rep1&type=pdf) helped me upgrade the typechecking to Hindley-Milner style inference.
