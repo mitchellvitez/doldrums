@@ -11,7 +11,6 @@ import Typecheck
 import FixAst
 import Language
 import Interpret
--- import GMachine
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
@@ -78,16 +77,3 @@ runBase programText strat isDebug = do
 
           debug isDebug "OUTPUT" $ pure ()
           strat . interpret . singleExprForm $ fmap (const void) program
-
-          -- G Machine
-
-          -- let
-          --   toPlainExprs :: [Function SourcePos] -> [(Name, [Name], Expr)]
-          --   toPlainExprs = map (\(Function _ name args body) -> (name, args, annotatedToExpr body))
-
-          --   constructorArities :: Map Tag Arity
-          --   constructorArities = Map.fromList $ concatMap unDataDeclaration $ dataDeclarations program
-          -- let result = gMachineCore constructorArities $ toPlainExprs $ functions program
-          -- debug isDebug "EVALUATION" . putTextLn $ gMachineEval result
-          -- debug isDebug "OUTPUT" $ pure ()
-          -- strat $ gMachineOutput result

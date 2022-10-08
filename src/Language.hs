@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -12,6 +14,7 @@ module Language
 where
 
 import Data.List (intercalate)
+import Data.String (IsString)
 import Data.Text (Text, unpack)
 import Data.Void
 import Text.Megaparsec (SourcePos)
@@ -66,15 +69,18 @@ deriving instance Show (CaseAlternative ())
 
 newtype Name = Name { unName :: Text }
   deriving (Eq, Show, Ord)
+  deriving newtype IsString
 
 newtype Tag = Tag { unTag :: Text }
   deriving (Eq, Show, Ord)
+  deriving newtype IsString
 
 newtype DataType = DataType { unDataType :: Text }
   deriving (Eq, Show)
 
 newtype Arity = Arity { unArity :: Int }
   deriving (Eq, Show)
+  deriving newtype Num
 
 data AnnotatedExpr a
   = AnnExprVariable a Name

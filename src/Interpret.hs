@@ -41,13 +41,14 @@ instance Exception RuntimeException
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
-pattern App1 expr a     = ExprApplication expr a
-pattern App2 expr a b   = ExprApplication (ExprApplication expr a) b
-pattern App3 expr a b c = ExprApplication (ExprApplication (ExprApplication expr a) b) c
+pattern App1 expr a       = ExprApplication expr a
+pattern App2 expr a b     = ExprApplication (ExprApplication expr a) b
+pattern App3 expr a b c   = ExprApplication (ExprApplication (ExprApplication expr a) b) c
+pattern App4 expr a b c d = ExprApplication (ExprApplication (ExprApplication (ExprApplication expr a) b) c) d
 
 eval :: Expr -> State Env Expr
 -- additional primitive operations
-eval (App3 (ExprVariable (Name "if")) pred a b) = do
+eval (App3 (ExprVariable "if") pred a b) = do
   evalPred <- eval pred
   evalA <- eval a
   evalB <- eval b
@@ -56,14 +57,14 @@ eval (App3 (ExprVariable (Name "if")) pred a b) = do
     ExprConstructor (Tag "False") (Arity 0) -> pure evalB
     _ -> throw . RuntimeException $ "Invalid predicate in an if expression: " <> tshow pred
 
-eval (ExprApplication (ExprVariable (Name "~")) a) = do
+eval (ExprApplication (ExprVariable "~") a) = do
   evalA <- eval a
   case evalA of
     ExprInt x -> pure . ExprInt $ negate x
     ExprDouble x -> pure . ExprDouble $ negate x
     x -> throw . RuntimeException $ "Invalid argument to (~): " <> tshow x
 
-eval (ExprApplication (ExprVariable (Name "!")) a) = do
+eval (ExprApplication (ExprVariable "!") a) = do
   evalA <- eval a
   case evalA of
     ExprConstructor (Tag "True") (Arity 0) -> pure $ ExprConstructor (Tag "False") (Arity 0)
@@ -115,14 +116,13 @@ eval e@(ExprApplication func arg) = do
       evalArg <- eval arg
       modify $ Map.insert name evalArg
       eval lambdaExpr
----------------------------------------
     (ExprConstructor _ _) -> pure e
     (App1 (ExprConstructor _ _) _) -> pure e
     (App2 (ExprConstructor _ _) _ _) -> pure e
     (App3 (ExprConstructor _ _) _ _ _) -> pure e
+    (App4 (ExprConstructor _ _) _ _ _ _) -> pure e
     x -> throw . RuntimeException $ "Tried to apply something that isn't a lambda: " <> tshow x
 
--- TODO: lots of partial functions in here which could be cleaned up
 eval (ExprCase scrutinee alts) = do
   evalScrutinee <- eval scrutinee
   let (tag, args) = tagAndArgs evalScrutinee []
@@ -130,17 +130,10 @@ eval (ExprCase scrutinee alts) = do
   mapM_ (modify . uncurry Map.insert) $ zip argNames args
   eval altBody
 
-  -- case find ((==scrutineeTag) . altTag) alts of
-  --   Nothing -> throw err
-  --   Just (Alternative _ argNames altBody) ->
-  --     if length argNames /= length args
-  --     then throw err
-  --     else do
-
   where
     tagAndArgs (ExprApplication expr arg) acc = tagAndArgs expr (arg:acc)
     tagAndArgs e@(ExprConstructor tag (Arity arity)) acc | length acc == arity = (tag, acc)
-    tagAndArgs e _ = error $ "Bad tagAndArgs: " <> show e -- throw err
+    tagAndArgs e _ = throw err
 
     findOrErr finder = fromMaybe (throw err) . find finder
 
@@ -150,15 +143,6 @@ eval (ExprCase scrutinee alts) = do
 
 eval x = error $ "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms: " <> show x
 
--- for an Expr of the form
--- Constructor
--- App1 Constructor arg1
--- App2 Constructor arg1 arg2
--- App3 Constructor arg1 arg2 arg3
--- etc.
--- get the list of args (which should all be Exprs)
-
------------------------------
 
 evalBinIntOp :: Name -> Expr -> Expr -> State Env Expr
 evalBinIntOp op a b = do
@@ -211,6 +195,7 @@ evalBinCompOp op a b = do
   evalA <- eval a
   evalB <- eval b
   let
+    primOp :: Ord a => a -> a -> Bool
     primOp = case op of
       Name "==" -> (==)
       Name "!=" -> (/=)
@@ -221,6 +206,5 @@ evalBinCompOp op a b = do
       x -> throw . RuntimeException $ "Unknown comparison operation: " <> unName x
   case (evalA, evalB) of
     (ExprInt x, ExprInt y) -> pure $ ExprConstructor (Tag (tshow (x `primOp` y))) (Arity 0)
-    -- TODO
-    -- (ExprDouble x, ExprDouble y) -> pure $ ExprConstructor (tshow (x `primOp` y)) 0
+    (ExprDouble x, ExprDouble y) -> pure $ ExprConstructor (Tag (tshow (x `primOp` y))) (Arity 0)
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
