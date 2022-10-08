@@ -12,10 +12,10 @@ import qualified Data.Text as Text
 
 lookupTag :: [DataDeclaration] -> Tag -> Arity
 lookupTag [] tag = error $ "Could not find constructor: " <> show tag
-lookupTag (DataDeclaration [] : rest) tag = lookupTag rest tag
-lookupTag (DataDeclaration ((tagX, arity):xs) : rest) tag
+lookupTag (DataDeclaration [] _dataType : rest) tag = lookupTag rest tag
+lookupTag (DataDeclaration ((tagX, arity):xs) dataType : rest) tag
   | tag == tagX = arity
-  | otherwise = lookupTag (DataDeclaration xs : rest) tag
+  | otherwise = lookupTag (DataDeclaration xs dataType : rest) tag
 
 fixExprArities :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
 fixExprArities _ e@(AnnExprVariable _ _) = e

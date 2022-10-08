@@ -33,7 +33,10 @@ instance Semigroup (Program a) where
 instance Functor Program where
   fmap f (Program funcs datas) = Program (fmap f <$> funcs) datas
 
-newtype DataDeclaration = DataDeclaration { unDataDeclaration :: [(Tag, Arity)] }
+data DataDeclaration = DataDeclaration
+  { unDataDeclaration :: [(Tag, Arity)]
+  , dataType :: Tag
+  }
   deriving (Eq, Show)
 
 -- name, list of arguments, body

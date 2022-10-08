@@ -53,14 +53,14 @@ parseFunction = do
 parseDataDeclaration :: Parser DataDeclaration
 parseDataDeclaration = do
   lexeme $ string "data"
-  _TODO <- parseExprConstructor
+  dataTy <- parseTag
   lexeme $ char '='
   constructors <- parseConstructorDeclaration `sepBy1` lexeme (char '|')
-  pure $ DataDeclaration constructors
+  pure $ DataDeclaration constructors dataTy
 
 parseConstructorDeclaration :: Parser (Tag, Arity)
 parseConstructorDeclaration = do
-  tag <- parseCaseName
+  tag <- parseTag
   arity <- parseInt
   pure (tag, arity)
 
@@ -144,7 +144,7 @@ parseExprLiteral =
 
 parseExprConstructor :: Parser Expr
 parseExprConstructor = do
-  tag <- parseCaseName
+  tag <- parseTag
   pure $ ExprConstructor tag (-1);
 
 parseExprLet :: Parser Expr
@@ -165,7 +165,7 @@ parseExprCase = do
 
 parseCaseAlternative :: Parser (CaseAlternative Void)
 parseCaseAlternative = do
-  caseName <- parseCaseName
+  caseName <- parseTag
   names <- many parseName
   lexeme $ string "->"
   expr <- parseExpr
@@ -217,8 +217,8 @@ parseDouble = lexeme L.float
 parseString :: Parser Text
 parseString = lexeme $ char '"' >> pack <$> manyTill L.charLiteral (char '"')
 
-parseCaseName :: Parser Tag
-parseCaseName = lexeme $ try $ do
+parseTag :: Parser Tag
+parseTag = lexeme $ try $ do
   first <- upperChar
   rest <- many parseNameChar
   pure $ pack (first : rest)

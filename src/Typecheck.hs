@@ -36,6 +36,7 @@ data Type
   = Int
   | Double
   | String
+  | Tagged Tag
   | Type :-> Type
   | TypeVariable Name
   deriving (Eq, Show, Generic, NFData)
@@ -88,7 +89,7 @@ instance Types Type where
   freeTypeVariable Int = Set.empty
   freeTypeVariable String = Set.empty
   freeTypeVariable Double = Set.empty
-  -- freeTypeVariable (Constructor _ _) = Set.empty
+  freeTypeVariable (Tagged t) = Set.empty
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
@@ -177,6 +178,7 @@ typeCheckExpr _ (AnnExprConstructor _ _ arity) = do
   where
     type_ :: Int -> TypeInstantiation Type
     type_ 0 = do
+      -- TODO: replace this with the constructor Type
       typeVar <- newTypeVar "a"
       pure typeVar
     type_ n = do
@@ -270,15 +272,20 @@ typeInference program programText = do
   where
     initialEnvironment = Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
-    initialFunctionTypes (Program [] datas) _ = []
+    initialFunctionTypes (Program [] []) _ = []
     initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
-      (name, functionType n (length args)) : initialFunctionTypes (Program restFuncs datas) (n+1)
+      (name, functionType n (length args) Nothing) : initialFunctionTypes (Program restFuncs datas) (n+1)
+    initialFunctionTypes (Program funcs (DataDeclaration [] dataTy : restDatas)) n =
+      initialFunctionTypes (Program funcs restDatas) n
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, arity) : restDecls) dataTy : restDatas)) n =
+      (x, functionType n arity (Just dataTy)) : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy : restDatas)) (n+1)
 
-    functionType :: Int -> Arity -> Type
-    functionType n 0 = do
-      TypeVariable $ "f" <> tshow n <> "arg0"
-    functionType n args = do
-      (TypeVariable $ "f" <> tshow n <> "arg" <> tshow args) :-> (functionType n (args - 1))
+    functionType :: Int -> Arity -> Maybe Tag -> Type
+    functionType n 0 mType = case mType of
+      Nothing -> TypeVariable $ "f" <> tshow n <> "arg0"
+      Just dataTy -> Tagged dataTy
+    functionType n args mType = do
+      (TypeVariable $ "f" <> tshow n <> "arg" <> tshow args) :-> (functionType n (args - 1) mType)
 
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
