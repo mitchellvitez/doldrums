@@ -12,7 +12,7 @@ The compiler is written in Haskell. Run `stack run test.dol` to see an example.
 
 ### Structure
 
-Compilation is split into several stages, and the code is split as well. The AST definition of the language lives in the `Language` module. Parsing happens in `Parse`, and typechecking in `Typecheck`. The `Template` module performs template instantiation to actually evaluate programs. 
+Compilation is split into several stages, and the code is split as well. The AST definition of the language lives in the `Language` module. Parsing happens in `Parse`, that syntax tree is fixed by `FixAst` and typechecking happens in `Typecheck`. The `Interpret` module actually evaluates the program. 
 
 The `runBase` function in `Lib` performs each stage of the compilation pipeline. In order, it parses a small prelude (written in Doldrums), reads an input file, parses, typechecks, evaluates, and shows the program's result.
 
