@@ -34,8 +34,8 @@ instance Functor Program where
   fmap f (Program funcs datas) = Program (fmap f <$> funcs) datas
 
 data DataDeclaration = DataDeclaration
-  { unDataDeclaration :: [(Tag, Arity)]
-  , dataType :: Tag
+  { declarations :: [(Tag, Arity)]
+  , dataType :: DataType
   }
   deriving (Eq, Show)
 
@@ -52,7 +52,7 @@ deriving instance Show (Function SourcePos)
 
 instance Show (Function ()) where
   show (Function _ name args body) =
-    unpack name <> " " <> intercalate " " (map unpack args) <> " = " <> show body
+    unpack (unName name) <> " " <> intercalate " " (map (unpack . unName) args) <> " = " <> show body
 
 instance Functor Function where
   fmap f (Function annot name args body) = Function (f annot) name args (f <$> body)
@@ -64,9 +64,17 @@ deriving instance Show (CaseAlternative SourcePos)
 deriving instance Show (CaseAlternative Void)
 deriving instance Show (CaseAlternative ())
 
-type Name = Text
-type Tag = Text
-type Arity = Int
+newtype Name = Name { unName :: Text }
+  deriving (Eq, Show, Ord)
+
+newtype Tag = Tag { unTag :: Text }
+  deriving (Eq, Show, Ord)
+
+newtype DataType = DataType { unDataType :: Text }
+  deriving (Eq, Show)
+
+newtype Arity = Arity { unArity :: Int }
+  deriving (Eq, Show)
 
 data AnnotatedExpr a
   = AnnExprVariable a Name
@@ -124,7 +132,7 @@ instance Show (AnnotatedExpr ()) where
 --   | ExprApplication Expr Expr
 --   | ExprLet Name Expr Expr
 --   | ExprLambda Name Expr
---   deriving (Show, Eq, Ord, Generic, NFData)
+--   deriving (Show, Eq, Ord)
 
 type Expr = AnnotatedExpr Void
 

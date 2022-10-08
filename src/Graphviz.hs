@@ -26,7 +26,7 @@ import Data.Void
 toGraphviz :: Program Void -> Text
 toGraphviz program = fold
   [ "digraph {\n  rankdir=BT\n  ordering=in\n"
-  , programToGraphviz . fst $ runState (labelProgram program) (-1, Map.fromList [("main", 0)])
+  , programToGraphviz . fst $ runState (labelProgram program) (-1, Map.fromList [(Name "main", 0)])
   , "\n}"
   ]
 
@@ -120,7 +120,7 @@ programToGraphviz (Program funcs datas) =
 
 functionToGraphviz :: Set Name -> Function Integer -> Text
 functionToGraphviz functionNames (Function annot name args body) = fold
-  [ boxNode annot name
+  [ boxNode annot $ unName name
   , exprToGraphviz functionNames body
   , annotation body `pointsTo` annot
   ]
@@ -129,10 +129,10 @@ exprToGraphviz :: Set Name -> AnnotatedExpr Integer -> Text
 exprToGraphviz _ (AnnExprInt n x) = node n $ tshow x
 exprToGraphviz _ (AnnExprString n s) = node n $ tshow s
 exprToGraphviz _ (AnnExprDouble n d) = node n $ tshow d
-exprToGraphviz _ (AnnExprConstructor n t a) =
+exprToGraphviz _ (AnnExprConstructor n (Tag t) a) =
   node n t
 exprToGraphviz functionNames (AnnExprVariable n v) =
-  if v `elem` functionNames then "" else node n v
+  if v `elem` functionNames then "" else node n (unName v)
 exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   [ node n "App"
   , exprToGraphviz functionNames f
@@ -141,7 +141,7 @@ exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   , annotation x `pointsTo` n
   ]
 exprToGraphviz functionNames (AnnExprLet n name binding body) = fold $
-  [ toGraphviz name binding
+  [ toGraphviz (unName name) binding
   , exprToGraphviz functionNames body
   , annotation body `pointsTo` n
   ]
@@ -152,7 +152,7 @@ exprToGraphviz functionNames (AnnExprLet n name binding body) = fold $
       , annotation binding `pointsTo` n
       ]
 exprToGraphviz functionNames (AnnExprLambda n name expr) = fold
-  [ node n $ "Lam (" <> name <> ")"
+  [ node n $ "Lam (" <> unName name <> ")"
   , exprToGraphviz functionNames expr
   , annotation expr `pointsTo` n
   ]

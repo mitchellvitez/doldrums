@@ -56,13 +56,13 @@ parseDataDeclaration = do
   dataTy <- parseTag
   lexeme $ char '='
   constructors <- parseConstructorDeclaration `sepBy1` lexeme (char '|')
-  pure $ DataDeclaration constructors dataTy
+  pure $ DataDeclaration constructors (DataType $ unTag dataTy)
 
 parseConstructorDeclaration :: Parser (Tag, Arity)
 parseConstructorDeclaration = do
   tag <- parseTag
   arity <- parseInt
-  pure (tag, arity)
+  pure (tag, Arity arity)
 
 parseAnnotatedExpr :: Parser (AnnotatedExpr SourcePos)
 parseAnnotatedExpr = do
@@ -127,13 +127,13 @@ binaryOpAST :: Text -> Expr -> Expr -> Expr
 binaryOpAST "$" expr1 expr2 =
   ExprApplication expr1 expr2
 binaryOpAST name expr1 expr2 =
-  ExprApplication (ExprApplication (ExprVariable name) expr1) expr2
+  ExprApplication (ExprApplication (ExprVariable (Name name)) expr1) expr2
 
 prefixOp :: Text -> Operator Parser Expr
 prefixOp name = Prefix $ prefixOpAST name <$ (lexeme . try) (string name)
 
 prefixOpAST :: Text -> Expr -> Expr
-prefixOpAST name expr = ExprApplication (ExprVariable name) expr
+prefixOpAST name expr = ExprApplication (ExprVariable (Name name)) expr
 
 parseExprLiteral :: Parser Expr
 parseExprLiteral =
@@ -145,7 +145,7 @@ parseExprLiteral =
 parseExprConstructor :: Parser Expr
 parseExprConstructor = do
   tag <- parseTag
-  pure $ ExprConstructor tag (-1);
+  pure $ ExprConstructor tag $ Arity (-1)
 
 parseExprLet :: Parser Expr
 parseExprLet = do
@@ -221,7 +221,7 @@ parseTag :: Parser Tag
 parseTag = lexeme $ try $ do
   first <- upperChar
   rest <- many parseNameChar
-  pure $ pack (first : rest)
+  pure . Tag $ pack (first : rest)
   -- can't be a keyword due to first upperChar
 
 parseName :: Parser Name
@@ -231,7 +231,7 @@ parseName = lexeme $ try $ do
   let name = pack (first : rest)
   if name `Set.member` keywords
     then fail "found keyword when looking for variable"
-    else pure name
+    else pure $ Name name
 
 parseNameChar :: Parser Char
 parseNameChar =

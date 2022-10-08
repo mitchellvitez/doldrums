@@ -38,29 +38,29 @@ fixArities (Program funcs datas) = Program (map (fixFunctionArities datas) funcs
 
 checkUniqueFunctions :: Program a -> Program a
 checkUniqueFunctions program@(Program funcs datas) =
-  case findDuplicateName Set.empty $ map name funcs of
+  case findDuplicate Set.empty $ map name funcs of
     Nothing -> program
-    Just name -> error $ "Duplicate function: " <> Text.unpack name
+    Just (Name name) -> error $ "Duplicate function: " <> Text.unpack name
 
 checkUniqueConstructors :: Program a -> Program a
 checkUniqueConstructors program@(Program funcs datas) =
-  case findDuplicateName Set.empty . map fst $ concatMap unDataDeclaration datas of
+  case findDuplicate Set.empty . map fst $ concatMap declarations datas of
     Nothing -> program
-    Just name -> error $ "Duplicate constructor: " <> Text.unpack name
+    Just (Tag tag) -> error $ "Duplicate constructor: " <> Text.unpack tag
 
-findDuplicateName :: Set Name -> [Name] -> Maybe Name
-findDuplicateName seen [] = Nothing
-findDuplicateName seen (x:xs) =
+findDuplicate :: Ord a => Set a -> [a] -> Maybe a
+findDuplicate seen [] = Nothing
+findDuplicate seen (x:xs) =
   if x `Set.member` seen
   then Just x
-  else findDuplicateName (Set.insert x seen) xs
+  else findDuplicate (Set.insert x seen) xs
 
 astFixes :: Program a -> Program a
 astFixes = fixArities . checkUniqueFunctions . checkUniqueConstructors
 
 singleExprForm :: Program a -> AnnotatedExpr a
 singleExprForm program@(Program funcs _) =
-  foldl' toSingle (getMainExpr program) (filter (\(Function _ name _ _) -> name /= "main") funcs)
+  foldl' toSingle (getMainExpr program) (filter (\(Function _ name _ _) -> name /= Name "main") funcs)
 
   where
     toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
@@ -73,5 +73,5 @@ singleExprForm program@(Program funcs _) =
 getMainExpr :: Program a -> AnnotatedExpr a
 getMainExpr (Program [] datas) = error "Couldn't find main"
 getMainExpr (Program (Function _ name _ body : restFuncs) datas) = case name of
-  "main" -> body
+  Name "main" -> body
   _ -> getMainExpr $ Program restFuncs datas

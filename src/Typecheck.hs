@@ -16,7 +16,6 @@ import FixAst (singleExprForm)
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.DeepSeq (NFData)
 import Control.Exception
 import GHC.Generics
 import Data.Foldable (fold)
@@ -36,10 +35,10 @@ data Type
   = Int
   | Double
   | String
-  | Tagged Tag
+  | Tagged DataType
   | Type :-> Type
   | TypeVariable Name
-  deriving (Eq, Show, Generic, NFData)
+  deriving (Eq, Show, Generic)
 
 infixr 6 :->
 
@@ -132,7 +131,7 @@ newTypeVar :: Text -> TypeInstantiation Type
 newTypeVar prefix = do
   state <- get
   put state { typeInstantiationSupply = typeInstantiationSupply state + 1 }
-  pure $ TypeVariable $ prefix <> (tshow $ typeInstantiationSupply state)
+  pure . TypeVariable . Name $ prefix <> (tshow $ typeInstantiationSupply state)
 
 instantiate :: Scheme -> TypeInstantiation Type
 instantiate (Scheme vars t) = do
@@ -162,7 +161,7 @@ varBind sourcePos u t
   | t == TypeVariable u = pure emptySubstitution
   | u `Set.member` freeTypeVariable t = throw . TypeCheckingException sourcePos $ fold
       [ "Occurs check failed: "
-      , u
+      , unName u
       , " does not match "
       , tshow t
       ]
@@ -173,7 +172,7 @@ typeCheckExpr _ (AnnExprInt _ _) = pure (emptySubstitution, Int)
 typeCheckExpr _ (AnnExprString _ _) = pure (emptySubstitution, String)
 typeCheckExpr _ (AnnExprDouble _ _) = pure (emptySubstitution, Double)
 typeCheckExpr _ (AnnExprConstructor _ _ arity) = do
-  ty <- type_ arity
+  ty <- type_ $ unArity arity
   pure (emptySubstitution, ty)
   where
     type_ :: Int -> TypeInstantiation Type
@@ -274,45 +273,46 @@ typeInference program programText = do
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
     initialFunctionTypes (Program [] []) _ = []
     initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
-      (name, functionType n (length args) Nothing) : initialFunctionTypes (Program restFuncs datas) (n+1)
+      (name, functionType n (Arity $ length args) Nothing) : initialFunctionTypes (Program restFuncs datas) (n+1)
     initialFunctionTypes (Program funcs (DataDeclaration [] dataTy : restDatas)) n =
       initialFunctionTypes (Program funcs restDatas) n
     initialFunctionTypes (Program funcs (DataDeclaration ((x, arity) : restDecls) dataTy : restDatas)) n =
-      (x, functionType n arity (Just dataTy)) : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy : restDatas)) (n+1)
+      (Name $ unTag x, functionType n arity (Just dataTy)) : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy : restDatas)) (n+1)
 
-    functionType :: Int -> Arity -> Maybe Tag -> Type
-    functionType n 0 mType = case mType of
-      Nothing -> TypeVariable $ "f" <> tshow n <> "arg0"
+    functionType :: Int -> Arity -> Maybe DataType -> Type
+    functionType n (Arity 0) mType = case mType of
+      Nothing -> TypeVariable . Name $ "f" <> tshow n <> "arg0"
       Just dataTy -> Tagged dataTy
-    functionType n args mType = do
-      (TypeVariable $ "f" <> tshow n <> "arg" <> tshow args) :-> (functionType n (args - 1) mType)
+    functionType n (Arity numArgs) mType = do
+      (TypeVariable . Name $ "f" <> tshow n <> "arg" <> tshow numArgs) :-> (functionType n (Arity $ numArgs - 1) mType)
 
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
   -- prim25 = "Bool" for now
-  [ ("+", Int :-> Int :-> Int )
-  , ("+.", Double :-> Double :-> Double )
-  , ("if", TypeVariable "prim25" :-> TypeVariable "prim5" :-> TypeVariable "prim6")
-  , ("==", TypeVariable "prim7" :-> TypeVariable "prim8" :-> TypeVariable "prim25")
-  , ("-", TypeVariable "prim9" :-> TypeVariable "prim9" :-> TypeVariable "prim9")
-  , ("||", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
-  , ("<", TypeVariable "prim10" :-> TypeVariable "prim10" :-> TypeVariable "prim25")
-  , ("/", TypeVariable "prim11" :-> TypeVariable "prim11" :-> TypeVariable "prim11")
-  , ("const", TypeVariable "prim13" :-> TypeVariable "prim14" :-> TypeVariable "prim13")
-  , ("const2", TypeVariable "prim15" :-> TypeVariable "prim16" :-> TypeVariable "prim16")
-  , ("~", TypeVariable "prim17" :-> TypeVariable "prim17")
-  , ("*", Int :-> Int :-> Int)
-  , ("negate", TypeVariable "prim18" :-> TypeVariable "prim18")
-  , ("twice", (TypeVariable "prim19" :-> TypeVariable "prim19") :-> TypeVariable "prim19")
-  , ("id", TypeVariable "prim20" :-> TypeVariable "prim20")
-  , (">", TypeVariable "prim21" :-> TypeVariable "prim21" :-> TypeVariable "prim25")
-  , ("compose", (TypeVariable "prim23" :-> TypeVariable "prim24") :-> (TypeVariable "prim22" :-> TypeVariable "prim23") :-> TypeVariable "prim22" :-> TypeVariable "prim24")
-  , ("<=", TypeVariable "prim27" :-> TypeVariable "prim27" :-> TypeVariable "prim25")
-  , ("!=", TypeVariable "prim28" :-> TypeVariable "prim28" :-> TypeVariable "prim25")
-  , (">=", TypeVariable "prim29" :-> TypeVariable "prim29" :-> TypeVariable "prim25")
-  , ("&&", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
-  , ("and", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
-  , ("not", TypeVariable "prim25" :-> TypeVariable "prim25")
-  , ("or", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
-  , ("xor", TypeVariable "prim25" :-> TypeVariable "prim25" :-> TypeVariable "prim25")
+  [ (Name "+", Int :-> Int :-> Int )
+  , (Name "+.", Double :-> Double :-> Double )
+  , (Name "if", tvar "prim25" :-> tvar "prim5" :-> tvar "prim6")
+  , (Name "==", tvar "prim7" :-> tvar "prim8" :-> tvar "prim25")
+  , (Name "-", tvar "prim9" :-> tvar "prim9" :-> tvar "prim9")
+  , (Name "||", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
+  , (Name "<", tvar "prim10" :-> tvar "prim10" :-> tvar "prim25")
+  , (Name "/", tvar "prim11" :-> tvar "prim11" :-> tvar "prim11")
+  , (Name "const", tvar "prim13" :-> tvar "prim14" :-> tvar "prim13")
+  , (Name "const2", tvar "prim15" :-> tvar "prim16" :-> tvar "prim16")
+  , (Name "~", tvar "prim17" :-> tvar "prim17")
+  , (Name "*", Int :-> Int :-> Int)
+  , (Name "negate", tvar "prim18" :-> tvar "prim18")
+  , (Name "twice", (tvar "prim19" :-> tvar "prim19") :-> tvar "prim19")
+  , (Name "id", tvar "prim20" :-> tvar "prim20")
+  , (Name ">", tvar "prim21" :-> tvar "prim21" :-> tvar "prim25")
+  , (Name "compose", (tvar "prim23" :-> tvar "prim24") :-> (tvar "prim22" :-> tvar "prim23") :-> tvar "prim22" :-> tvar "prim24")
+  , (Name "<=", tvar "prim27" :-> tvar "prim27" :-> tvar "prim25")
+  , (Name "!=", tvar "prim28" :-> tvar "prim28" :-> tvar "prim25")
+  , (Name ">=", tvar "prim29" :-> tvar "prim29" :-> tvar "prim25")
+  , (Name "&&", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
+  , (Name "and", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
+  , (Name "not", tvar "prim25" :-> tvar "prim25")
+  , (Name "or", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
+  , (Name "xor", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
   ]
+  where tvar = TypeVariable . Name
