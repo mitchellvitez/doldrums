@@ -1,4 +1,3 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Parse where
@@ -8,7 +7,8 @@ import Language
 import Data.List as List (foldr)
 import Control.Monad.Combinators.Expr
 import Control.Monad (void)
-import Data.Text
+import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -32,35 +32,34 @@ lexeme = L.lexeme spaceConsumer
 data TopLevel a = Decl DataDeclaration | Func (Function a)
 
 parseProgram :: Parser (Program SourcePos)
-parseProgram =
-  topLevelToProgram (Program [] []) <$> some parseTopLevel
+parseProgram = do
+  topLevels <- some parseTopLevel
+  pure $ topLevelToProgram (Program [] []) topLevels
 
 topLevelToProgram :: Program SourcePos -> [TopLevel SourcePos] -> Program SourcePos
-topLevelToProgram program [] = program
+topLevelToProgram Program{..} [] = Program (reverse functions) (reverse dataDeclarations)
 topLevelToProgram Program{..} (topLevel:rest) = case topLevel of
   Decl (d@(DataDeclaration _ _)) -> topLevelToProgram Program{..} { dataDeclarations = d : dataDeclarations } rest
   Func (f@(Function _ _ _ _)) -> topLevelToProgram Program{..} { functions = f : functions } rest
 
 parseTopLevel :: Parser (TopLevel SourcePos)
 parseTopLevel =
-  L.nonIndented spaceConsumerNewline $ L.lineFold spaceConsumerNewline parseEitherTopLevel
+  L.nonIndented spaceConsumerNewline parseEitherTopLevel <* spaceConsumerNewline
 
-parseEitherTopLevel :: Parser () -> Parser (TopLevel SourcePos)
-parseEitherTopLevel lineFoldSpaceConsumer =
+parseEitherTopLevel :: Parser (TopLevel SourcePos)
+parseEitherTopLevel =
   try (Decl <$> parseDataDeclaration) <|>
-  Func <$> (parseFunction lineFoldSpaceConsumer)
+      (Func <$> parseFunction)
 
 symbol :: Text -> Parser ()
 symbol s = L.symbol' spaceConsumer s >> return ()
 
-parseFunction :: Parser () -> Parser (Function SourcePos)
-parseFunction lineFoldSpaceConsumer = do
+parseFunction :: Parser (Function SourcePos)
+parseFunction = do
   name <- parseName
   args <- many parseName
   symbol "="
-  lineFoldSpaceConsumer
   body <- parseAnnotatedExpr
-  spaceConsumerNewline
   sourcePos <- getSourcePos
   pure $ Function sourcePos name args body
 
@@ -163,19 +162,20 @@ parseExprConstructor = do
 
 parseExprLet :: Parser Expr
 parseExprLet = do
-  lexeme $ string "let"
-  definitions <- parseDefinition `sepBy1` lexeme (char ',')
+  definitions <- L.indentBlock spaceConsumerNewline $ do
+    lexeme $ string "let"
+    pure $ L.IndentSome Nothing pure parseDefinition
   lexeme $ string "in"
   body <- parseExpr
   pure $ List.foldr (\(name, binding) -> ExprLet name binding) body definitions
 
 parseExprCase :: Parser Expr
-parseExprCase = do
-  lexeme $ string "case"
-  scrutinee <- parseExpr
-  lexeme $ string "of"
-  alternatives <- parseCaseAlternative `sepBy1` lexeme (char ',')
-  pure $ ExprCase scrutinee alternatives
+parseExprCase =
+  L.indentBlock spaceConsumerNewline $ do
+    lexeme $ string "case"
+    scrutinee <- parseExpr
+    lexeme $ string "of"
+    pure $ L.IndentSome Nothing (pure . ExprCase scrutinee) parseCaseAlternative
 
 parseCaseAlternative :: Parser (CaseAlternative ())
 parseCaseAlternative = do
@@ -229,20 +229,20 @@ parseDouble :: Parser Double
 parseDouble = lexeme L.float
 
 parseString :: Parser Text
-parseString = lexeme $ char '"' >> pack <$> manyTill L.charLiteral (char '"')
+parseString = lexeme $ char '"' >> T.pack <$> manyTill L.charLiteral (char '"')
 
 parseTag :: Parser Tag
 parseTag = lexeme $ try $ do
   first <- upperChar
   rest <- many parseNameChar
-  pure . Tag $ pack (first : rest)
+  pure . Tag $ T.pack (first : rest)
   -- can't be a keyword due to first upperChar
 
 parseName :: Parser Name
 parseName = lexeme $ try $ do
   first <- lowerChar
   rest <- many parseNameChar
-  let name = pack (first : rest)
+  let name = T.pack (first : rest)
   if name `Set.member` keywords
     then fail "found keyword when looking for variable"
     else pure $ Name name

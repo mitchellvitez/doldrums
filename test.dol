@@ -1,8 +1,14 @@
-data Maybe = Nothing 0 | Just 1
+indent =
+  let
+    x = 1
+    y = 2
+  in x + y
 
-withDefault maybe default =
-  case maybe of
-    Nothing -> default,
-    Just x -> x
+hangingIndent = let
+  x = 1
+  y = 2
+  in x + y
 
-main = withDefault Nothing 7 + withDefault (Just 2) 4
+oneLiner = let x = 1 in x
+
+main = indent + hangingIndent + oneLiner

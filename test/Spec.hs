@@ -60,7 +60,15 @@ main = f three four
 
     it "lazy let" $ do
       testProgram "7" [r|
-main = let d = e, a = b, f = 7, c = d, e = f, b = c in f
+main =
+  let
+    d = e
+    a = b
+    f = 7
+    c = d
+    e = f
+    b = c
+  in f
 |]
 
     it "mutually recursive functions" $ do
@@ -100,7 +108,10 @@ c = a
     it "more complex program" $ do
       testProgram  "64" [r|
 f p = (id p) * p
-double n = let b = 2 in n * b
+double n =
+  let
+    b = 2
+  in n * b
 main = f (double 4)
 |]
 
@@ -157,13 +168,13 @@ main = negate $ negate 3
     it "parseDefinition" $ do
       testParser parseDefinition "x = 2" ("x", ExprInt 2)
 
-    xit "parseExprCase" $ do
+    it "parseExprCase" $ do
       testParser parseExprCase "case maybe of\n  Nothing -> 0\n  Just x -> x" (ExprCase (ExprVariable "maybe") [Alternative "Nothing" [] (ExprInt 0), Alternative "Just" ["x"] (ExprVariable "x")])
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let x = 2 in x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
-      testParser parseExprLet "let x = 2, y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
-      testParser parseExprLet "let x = 2 in let y = 3 in x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
+      testParser parseExprLet "let\n  x = 2\nin x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
+      testParser parseExprLet "let\n  x = 2\n  y = 3\nin x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
+      testParser parseExprLet "let\n  x = 2\nin\nlet\n  y = 3\nin x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
 
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))
@@ -249,9 +260,10 @@ fac n = if (n == 0) 1 $ n * fac (n-1)
 
     it "bool" $ do
       testProgram "3" [r|
-myIf c t f = case c of
-  True -> t,
-  False -> f
+myIf c t f =
+  case c of
+    True -> t
+    False -> f
 
 main = myIf (1 < 2) 3 4
 |]
@@ -260,14 +272,27 @@ main = myIf (1 < 2) 3 4
       testProgram "2" [r|
 data List = Nil 0 | Cons 2
 
-length list = case list of
-  Nil -> 0,
-  Cons x xs -> 1 + length xs
+length list =
+  case list of
+    Nil -> 0
+    Cons x xs -> 1 + length xs
 
 main = length $ Cons 1 $ Cons 2 Nil
 |]
 
     it "maybe withDefault" $ do
+      testProgram "9" [r|
+data Maybe = Nothing 0 | Just 1
+
+withDefault maybe default =
+  case maybe of
+    Nothing -> default
+    Just x -> x
+
+main = withDefault Nothing 7 + withDefault (Just 2) 4
+|]
+
+    xit "maybe withDefault - case with hanging indent" $ do
       testProgram "9" [r|
 data Maybe = Nothing 0 | Just 1
 
@@ -306,8 +331,26 @@ main = True
     it "case with different result types" $ do
       testProgramException [r|
 f c = case c of
-  True -> "test",
+  True -> "test"
   False -> 7
 
 main = f False
+|]
+
+    xit "indentation test" $ do
+      testProgram "7" [r|
+indent =
+  let
+    x = 1
+    y = 2
+  in x + y
+
+hangingIndent = let
+  x = 1
+  y = 2
+  in x + y
+
+oneLiner = let x = 1 in x
+
+main = indent + hangingIndent + oneLiner
 |]
