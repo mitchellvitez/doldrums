@@ -18,7 +18,7 @@ The `runBase` function in `Lib` performs each stage of the compilation pipeline.
 
 ## The Doldrums language
 
-Doldrums is purely functional, which means that all values are immutable. It's also lazy, tiny, and pretty useless in the real world.
+Doldrums is purely functional, which means that all values are immutable. It's also non-strict, tiny, and pretty useless in the real world.
 
 ### Comments
 
@@ -73,13 +73,14 @@ let
 in n
 ```
 
-Multiple definitions should be separated by commas
+Multiple definitions are allowed (via syntactic sugar that parses into nested `let` expressions)
 ```
 let
   a = 1
   b = 2
   c = 3
-in a * b * c
+in
+  a * b * c
 ```
 
 ## Parsing
@@ -92,7 +93,7 @@ Here's a simplified call graph of the parsing code, showing its structure:
 
 ## Typechecking
 
-The list of Doldrums types is short: `Bool`, `Int`, `Double`, `String`, `Constructor`, `TypeVariable`, and `:->` (the function type).
+The list of Doldrums types is short: `Bool`, `Int`, `Double`, `String`, `Tagged` (for user-defined types), `TypeVariable`, and `:->` (the function type).
 
 Doldrums uses Hindley-Milner style type inference to ensure that certain kinds of invalid programs aren't allowed. For example, this program will fail to typecheck:
 
