@@ -9,7 +9,6 @@ import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import FixAst
-import Language
 import Interpret
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
@@ -65,7 +64,7 @@ runBase programText strat isDebug = do
           let programWithoutPrelude = astFixes unnormalizedBadAritiesProgram
 
           debug isDebug "AST" . print $ const () <$> programWithoutPrelude
-          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const void <$> programWithoutPrelude
+          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> programWithoutPrelude
 
           (types, state) <- typeInference program programText
           debug isDebug "TYPE" $ do
@@ -76,4 +75,4 @@ runBase programText strat isDebug = do
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
           debug isDebug "OUTPUT" $ pure ()
-          strat . interpret . singleExprForm $ fmap (const void) program
+          strat . interpret . singleExprForm $ fmap (const ()) program

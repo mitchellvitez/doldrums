@@ -18,12 +18,11 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Void
 
 -- runs two passes:
 --   1. label each node in the expr with unique integer
 --   2. use the labeled expr tree to generate graphviz
-toGraphviz :: Program Void -> Text
+toGraphviz :: Program () -> Text
 toGraphviz program = fold
   [ "digraph {\n  rankdir=BT\n  ordering=in\n"
   , programToGraphviz . fst $ runState (labelProgram program) (-1, Map.fromList [(Name "main", 0)])
@@ -47,7 +46,7 @@ type LabelState = (Integer, Map Name Integer)
 getNext :: State LabelState Integer
 getNext = modify (\(n, env) -> (n+1, env)) >> fst <$> get
 
-labelProgram :: Program Void -> State LabelState (Program Integer)
+labelProgram :: Program () -> State LabelState (Program Integer)
 labelProgram (Program funcs datas) = do
   let functionNames = fmap name funcs
       zipped = zip functionNames $ repeat (-1)
@@ -56,7 +55,7 @@ labelProgram (Program funcs datas) = do
   newFuncs' <- mapM labelFunctionAndExprs newFuncs
   pure $ Program newFuncs' datas
 
-labelFunction :: Function Void -> State LabelState (Function Integer)
+labelFunction :: Function () -> State LabelState (Function Integer)
 labelFunction (Function annot name args body) = do
   getNext
   (n, env) <- get
@@ -67,7 +66,7 @@ labelFunction (Function annot name args body) = do
 
 labelFunctionAndExprs :: Function Integer -> State LabelState (Function Integer)
 labelFunctionAndExprs (Function annot name args body) = do
-  labeledBody <- labelExpr (const Language.void <$> body)
+  labeledBody <- labelExpr (const () <$> body)
   pure $ Function annot name args labeledBody
 
 labelExpr :: Expr -> State LabelState (AnnotatedExpr Integer)

@@ -9,7 +9,7 @@ import Data.List as List (foldr)
 import Control.Monad.Combinators.Expr
 import Control.Monad (void)
 import Data.Text
-import Data.Void
+import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Data.Set as Set
@@ -177,7 +177,7 @@ parseExprCase = do
   alternatives <- parseCaseAlternative `sepBy1` lexeme (char ',')
   pure $ ExprCase scrutinee alternatives
 
-parseCaseAlternative :: Parser (CaseAlternative Void)
+parseCaseAlternative :: Parser (CaseAlternative ())
 parseCaseAlternative = do
   caseName <- parseTag
   names <- many parseName

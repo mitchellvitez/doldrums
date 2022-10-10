@@ -7,10 +7,8 @@ import Parse
 import Lib (runTest)
 import Typecheck
 
-import qualified Control.Monad as CM (void)
 import Data.Either
 import Data.Text
-import Data.Void
 import Test.Hspec
 import Text.Megaparsec
 import Text.RawString.QQ (r)
@@ -19,12 +17,12 @@ testParser :: (Show a, Eq a) => Parser a -> Text -> a -> Expectation
 testParser parser input output =
   parse parser "" input `shouldBe` Right output
 
-testProgramParser :: Parser (Program SourcePos) -> Text -> Program Void -> Expectation
+testProgramParser :: Parser (Program SourcePos) -> Text -> Program () -> Expectation
 testProgramParser parser input output =
   (ignoreAnnotations <$> parse parser "" input) `shouldBe` Right output
   where
     ignoreAnnotations (Program funcs datas) = Program funcs' datas
-      where funcs' = Prelude.map (\(Function annot name args expr) -> Function void name args (const Language.void <$> expr)) funcs
+      where funcs' = Prelude.map (\(Function annot name args expr) -> Function () name args (const () <$> expr)) funcs
 
 testParserFail :: (Show a, Eq a) => Parser a -> Text -> Expectation
 testParserFail parser input =
@@ -42,7 +40,7 @@ main :: IO ()
 main = hspec $ do
   describe "typechecking" $ do
     it "num plus string - parses" $ do
-      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function void "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
+      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function () "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
 
     it "num plus string" $ do
       testProgramException "main = 1 + \"hello\""
@@ -150,7 +148,7 @@ double x = x + x
       testProgramParser parseProgram [r|
 main = negate $ negate 3
 |]
-        (Program [Function void "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprInt 3)))] [])
+        (Program [Function () "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprInt 3)))] [])
 
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "True" (ExprConstructor "True" (-1))
@@ -158,6 +156,9 @@ main = negate $ negate 3
 
     it "parseDefinition" $ do
       testParser parseDefinition "x = 2" ("x", ExprInt 2)
+
+    xit "parseExprCase" $ do
+      testParser parseExprCase "case maybe of\n  Nothing -> 0\n  Just x -> x" (ExprCase (ExprVariable "maybe") [Alternative "Nothing" [] (ExprInt 0), Alternative "Just" ["x"] (ExprVariable "x")])
 
     it "parseExprLet" $ do
       testParser parseExprLet "let x = 2 in x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
@@ -173,7 +174,7 @@ main = negate $ negate 3
 id x = x
 main = id 2
 |]
-        (Program [Function void "id"  ["x"] (ExprVariable "x"), Function void "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
+        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
 
     it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
@@ -183,8 +184,8 @@ main = id 2
 main = double 21
 double x = x + x
 |]
-        (Program [ Function void "main" [] (ExprApplication (ExprVariable "double") (ExprInt 21))
-        , Function void "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
+        (Program [ Function () "main" [] (ExprApplication (ExprVariable "double") (ExprInt 21))
+        , Function () "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
         ] [])
 
     it "parses a program with many functions" $ do
@@ -194,7 +195,7 @@ f p = (id p) * p
 double n = n * 2
 main = f (double 4)
 |]
-        (Program [Function void "id" ["x"] (ExprVariable "x"), Function void "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function void "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprInt 2)), Function void "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprInt 4)))] [])
+        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprInt 2)), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprInt 4)))] [])
 
 
   describe "test full programs - " $ do
@@ -271,7 +272,7 @@ main = length $ Cons 1 $ Cons 2 Nil
 data Maybe = Nothing 0 | Just 1
 
 withDefault maybe default = case maybe of
-  Nothing -> default,
+  Nothing -> default
   Just x -> x
 
 main = withDefault Nothing 7 + withDefault (Just 2) 4
