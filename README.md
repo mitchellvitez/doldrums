@@ -36,18 +36,18 @@ Doldrums is purely functional, which means that all values are immutable. It's a
 A program is a list of functions. A function has a name, a list of arguments, and a body.
 
 ```
-id x = x;
-const x y = x;
+id x = x
+const x y = x
 ```
 
 You can define constants using a "function" with no arguments.
 ```
-seven = 7;
+seven = 7
 ```
 
 Every program has a main function. This is what runs when the program starts.
 ```
-main = const 6 7;
+main = const 6 7
 ```
 
 ### The $ operator
@@ -55,25 +55,30 @@ main = const 6 7;
 Because it has the lowest precedence, you can use `$` to replace parentheses in certain situations, for cleaner code. For example, 
 
 ```
-main = f (g (h x));
+main = f (g (h x))
 ```
 
 is equivalent to
 
 ```
-main = f $ g $ h x;
+main = f $ g $ h x
 ```
 
 ### Let expressions
 
 You can define variables to be used in an expression with `let`...`in`
 ```
-let n = 0 in n
+let
+  n = 0
+in n
 ```
 
 Multiple definitions should be separated by commas
 ```
-let a = 1, b = 2, c = 3
+let
+  a = 1
+  b = 2
+  c = 3
 in a * b * c
 ```
 
@@ -92,14 +97,14 @@ The list of Doldrums types is short: `Bool`, `Int`, `Double`, `String`, `Constru
 Doldrums uses Hindley-Milner style type inference to ensure that certain kinds of invalid programs aren't allowed. For example, this program will fail to typecheck:
 
 ```
-func x = x + 7;
-main = func "hello";
+func x = x + 7
+main = func "hello"
 ```
 
 So will this one, since you can't apply literals:
 
 ```
-main = 1 2 3;
+main = 1 2 3
 ```
 
 ### Operator Precedence
