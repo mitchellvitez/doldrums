@@ -107,29 +107,29 @@ So will this one, since you can't apply literals:
 main = 1 2 3
 ```
 
-### Operator Precedence
+### Operator Fixities
 
-Higher numbers mean higher precedence. All operators are binary (they have both a left and a right hand side).
+Higher numbers mean higher precedence.
 
 Precedence | Associativity | Operator
 -----------|---------------|---------
 7          | left          | _function application_
-6          | -             | `~`
-6          | -             | `!`
-5          | right         | `*`
-5          | right         | `*.`
-5          | right         | `/`
-5          | right         | `/.`
-4          | right         | `+`
-4          | right         | `+.`
-4          | right         | `-`
-4          | right         | `-.`
-3          | right         | `==`
-3          | right         | `!=`
-3          | right         | `>`
-3          | right         | `>=`
-3          | right         | `<`
-3          | right         | `<=`
+6          | _unary_       | `~`
+6          | _unary_       | `!`
+5          | left          | `*`
+5          | left          | `*.`
+5          | left          | `/`
+5          | left          | `/.`
+4          | left          | `+`
+4          | left          | `+.`
+4          | left          | `-`
+4          | left          | `-.`
+3          | _none_        | `==`
+3          | _none_        | `!=`
+3          | _none_        | `>`
+3          | _none_        | `>=`
+3          | _none_        | `<`
+3          | _none_        | `<=`
 2          | right         | `&&`
 1          | right         | `\|\|`
 0          | right         | `$`
