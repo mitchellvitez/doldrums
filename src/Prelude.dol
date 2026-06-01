@@ -1,13 +1,22 @@
 data Bool = True 0 | False 0
 
+data Ordering = LT 0 | EQ 0 | GT 0
+
 if cond then else =
   case cond of
     True -> then
     False -> else
 
+data Unit = Unit 0
+
+data Maybe = Nothing 0 | Just 1
+
+data Either = Left 1 | Right 1
+
 id x = x
 const x y = x
 const2 x y = y
+flip f x y = f y x
 sCombinator f g x = f x (g x)
 compose f g = \x -> f (g x)
 twice f = compose f f

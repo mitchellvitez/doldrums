@@ -9,7 +9,7 @@ import Language
 import Graphviz
 import Parse (parseProgram)
 import Typecheck
-import FixAst
+import FixAst (fixAst)
 import Interpret (interpret)
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
@@ -62,13 +62,15 @@ runBase programText strat isDebug = do
       case parse parseProgram "" programText of
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
-          let program = astFixes (prelude <> unnormalizedBadAritiesProgram)
-          let programWithoutPrelude = astFixes unnormalizedBadAritiesProgram
+          let program = fixAst (prelude <> unnormalizedBadAritiesProgram)
+          -- let programWithoutPrelude = fixAst unnormalizedBadAritiesProgram
 
-          debug isDebug "AST" . print $ const () <$> programWithoutPrelude
-          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> programWithoutPrelude
+          debug isDebug "AST" . print $ const () <$> program -- WithoutPrelude
+          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> program -- WithoutPrelude
 
+          putStrLn "got to just before typechecking"
           (types, state) <- typeInference program programText
+          putStrLn "got to after typechecking"
           debug isDebug "TYPE" $ do
             let toText (Right x) = pack $ show x
                 toText (Left x) = x

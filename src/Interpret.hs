@@ -178,16 +178,9 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
     "-." -> doubleBinOp (-) a b
     "*." -> doubleBinOp (*) a b
     "/." -> doubleBinOp (/) a b
-    -- TODO: desugar comparison operations into `compare` primitive
-    "==" -> cmpBinOp (==) a b
-    "!=" -> cmpBinOp (/=) a b
-    "<"  -> cmpBinOp (<) a b
-    ">"  -> cmpBinOp (>) a b
-    "<=" -> cmpBinOp (<=) a b
-    ">=" -> cmpBinOp (>=) a b
-    -- TODO: desugar bool operations into `case`
-    "&&" -> lazyAnd a b
-    "||" -> lazyOr a b
+    -- comparision operators (==, !=, <, >, <=, >=) are desugared into a `case` on the `compare` primitive
+    "compare" -> comparePrim a b
+    -- && and || are already desugared into `case` expressions
     _    -> do
       currentEnv <- gets env
       case Map.lookup (Name op) currentEnv of
@@ -198,8 +191,8 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
         Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
 -- unary operations
 whnf (ExprApplication (ExprVariable (Name op)) arg)
-  | op == "~"    = unaryNeg arg
-  | op == "!"    = unaryNot arg
+  | op == "~" = unaryNeg arg
+  | op == "!" = unaryNot arg
   | op == "show" = showPrim arg
   | otherwise    = do
       currentEnv <- gets env
@@ -290,21 +283,21 @@ strBinOp a b = do
     (ValString rawA, ValString rawB) -> pure . ValString $ rawA <> rawB
     _ -> throw $ RuntimeException "Type error in string concatenation"
 
-lazyAnd :: Expr -> Expr -> State EvalState Value
-lazyAnd a b = do
-  val <- whnf a
-  case val of
-    ValConstructor (Tag "True") _ -> whnf b
-    ValConstructor (Tag "False") _ -> pure $ ValConstructor (Tag "False") (Arity 0)
-    _ -> throw $ RuntimeException "Invalid argument to (&&)"
-
-lazyOr :: Expr -> Expr -> State EvalState Value
-lazyOr a b = do
-  val <- whnf a
-  case val of
-    ValConstructor (Tag "True") _ -> pure $ ValConstructor (Tag "True") (Arity 0)
-    ValConstructor (Tag "False") _ -> whnf b
-    _ -> throw $ RuntimeException "Invalid argument to (||)"
+comparePrim :: Expr -> Expr -> State EvalState Value
+comparePrim a b = do
+  valA <- whnf a
+  valB <- whnf b
+  case (valA, valB) of
+    (ValInt rawA, ValInt rawB) -> do
+      let result = compare rawA rawB
+      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
+    (ValDouble rawA, ValDouble rawB) -> do
+      let result = compare rawA rawB
+      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
+    (ValString rawA, ValString rawB) -> do
+      let result = compare rawA rawB
+      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
+    _ -> throw $ RuntimeException "Invalid argument to compare"
 
 unaryNeg :: Expr -> State EvalState Value
 unaryNeg a = do
