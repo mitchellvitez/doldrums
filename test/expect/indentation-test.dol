@@ -1,5 +1,4 @@
--- IGNORE
--- TODO: fix hanging indentation
+-- EXPECT 7
 
 indent =
   let

@@ -167,22 +167,33 @@ parseExprConstructor = do
   tag <- parseTag
   pure $ ExprConstructor tag $ Arity (-1)
 
+-- parse an indented block of multiple items. handles hanging indents
+manyIndented :: Parser a -> Parser [a]
+manyIndented parseSomething = do
+  eol
+  spaceConsumerNewline
+  ref <- L.indentLevel
+  first <- parseSomething
+  rest <- many . try $ L.indentGuard spaceConsumerNewline EQ ref *> parseSomething
+  pure (first : rest)
+
 parseExprLet :: Parser Expr
 parseExprLet = do
-  definitions <- L.indentBlock spaceConsumerNewline $ do
-    lexeme $ string "let"
-    pure $ L.IndentSome Nothing pure parseDefinition
+  lexeme $ string "let"
+  definitions <- try (manyIndented parseDefinition) <|> fmap pure parseDefinition
+  spaceConsumerNewline
   lexeme $ string "in"
+  spaceConsumerNewline
   body <- parseExpr
   pure $ List.foldr (\(name, binding) -> ExprLet name binding) body definitions
 
 parseExprCase :: Parser Expr
-parseExprCase =
-  L.indentBlock spaceConsumerNewline $ do
-    lexeme $ string "case"
-    scrutinee <- parseExpr
-    lexeme $ string "of"
-    pure $ L.IndentSome Nothing (pure . ExprCase scrutinee) parseCaseAlternative
+parseExprCase = do
+  lexeme $ string "case"
+  scrutinee <- parseExpr
+  lexeme $ string "of"
+  alternatives <- try $ manyIndented parseCaseAlternative
+  pure $ ExprCase scrutinee alternatives
 
 parsePattern :: Parser Pattern
 parsePattern =

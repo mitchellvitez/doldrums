@@ -83,4 +83,5 @@ runBase programText strat isDebug = do
               toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
               topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
               mainExpr = ExprVariable "main"
-          strat $ interpret topLevelBindings mainExpr
+              result = interpret topLevelBindings mainExpr
+          result `seq` strat result
