@@ -1,4 +1,5 @@
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DerivingStrategies #-}
 
 module Interpret
   ( interpret
@@ -10,29 +11,48 @@ import Language
 import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Control.Exception
+import Control.Monad (forM, when)
 import Control.Monad.State
 import qualified Data.Text as T
 import Data.Text (Text)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 
-interpret :: Expr -> Text
-interpret program = unpackExpr . fst $ runState (eval program) Map.empty
+-- | variable names map to thunks
+type Env = Map Name ThunkId
 
-unpackExpr :: Expr -> Text
-unpackExpr (ExprInt n) = tshow n
-unpackExpr (ExprString s) = s
-unpackExpr (ExprDouble d) = tshow d
-unpackExpr (ExprConstructor tag arity) = unTag tag
-unpackExpr x = case tagAndArgs x [] of
-  Just (tag, args) -> unTag tag <> " " <> T.intercalate " " (map unpackExpr args)
-  Nothing -> "Incomplete evaluation: " <> tshow x
-  where
-    tagAndArgs (ExprApplication expr arg) acc = tagAndArgs expr (arg:acc)
-    tagAndArgs e@(ExprConstructor tag (Arity arity)) acc | length acc == arity = Just (tag, acc)
-    tagAndArgs _ _ = Nothing
+-- | track the heap of all thunks by id, and the next available id, alongside current env
+data EvalState = EvalState
+  { heap :: IntMap ThunkInfo
+  , nextId :: ThunkId
+  , env :: Env
+  }
 
-type Env = Map Name Expr
+-- | evaluated form of Expr
+data Value
+  = ValInt Integer
+  | ValString Text
+  | ValDouble Double
+  -- | data contstructor, partially applied unless Arity is 0
+  | ValConstructor Tag Arity
+  -- | function closure (i.e. a lambda), Name is the bound argument, Expr is the body
+  | ValClosure Name Expr Env
+  -- | partially applied constructor or function, Value is function/constructor being applied, ThunkId is the argument
+  | ValApply Value ThunkId
+
+-- | a thunk is tracked by id
+newtype ThunkId = ThunkId { unThunkId :: Int }
+  deriving newtype (Show, Enum)
+
+data ThunkInfo
+  -- | unevaluated expression with the env it was created in
+  = Thunk Env Expr
+  -- | evaluation in progress, hitting this during eval means a cycle
+  | BlackHole
+  -- | evaluated, cached value
+  | Done Value
 
 data RuntimeException = RuntimeException Text
   deriving (Eq, Show)
@@ -41,192 +61,292 @@ instance Exception RuntimeException
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
-pattern App1 expr a       = ExprApplication expr a
-pattern App2 expr a b     = ExprApplication (ExprApplication expr a) b
-pattern App3 expr a b c   = ExprApplication (ExprApplication (ExprApplication expr a) b) c
-pattern App4 expr a b c d = ExprApplication (ExprApplication (ExprApplication (ExprApplication expr a) b) c) d
+instance Show Value where
+  show (ValInt n) = show n
+  show (ValString s) = show s
+  show (ValDouble d) = show d
+  show (ValConstructor tag _) = show tag
+  show (ValClosure arg _ _) = "<function arg=" <> T.unpack (unName arg) <> ">"
+  show (ValApply _ t) = "<thunk id=" <> show t <> ">"
 
-eval :: Expr -> State Env Expr
--- additional primitive operations
-eval (App3 (ExprVariable "if") pred a b) = do
-  evalPred <- eval pred
-  evalA <- eval a
-  evalB <- eval b
-  case evalPred of
-    ExprConstructor (Tag "True") (Arity 0) -> pure evalA
-    ExprConstructor (Tag "False") (Arity 0) -> pure evalB
-    _ -> throw . RuntimeException $ "Invalid predicate in an if expression: " <> tshow pred
+-- | takes top-level bindings and the `main` Expr, evaluates to user-facing Text result
+interpret :: [(Name, Expr)] -> Expr -> Text
+interpret bindings mainExpr =
+  fst $ flip runState initialState $ do
+    -- evaluate `main` Expr to a Value
+    val <- withEnv topLevelEnv $ whnf mainExpr
+    -- convert that Value to Text for display
+    unpackValue val
+ where
+  -- allocate a ThunkId for every top-level binding before evaluating
+  -- so all names are in scope for all bindings (mutual recursion)
+  tids = map ThunkId [0 .. length bindings - 1]
+  topLevelEnv = Map.fromList $ zip (map fst bindings) tids
+  initialState =
+    EvalState
+      { heap =
+          IntMap.fromList
+            [ (unThunkId tid, Thunk topLevelEnv expr)
+            | (tid, (_, expr)) <- zip tids bindings
+            ]
+      , nextId = ThunkId $ length bindings
+      , env = Map.empty
+      }
 
-eval (ExprApplication (ExprVariable "~") a) = do
-  evalA <- eval a
-  case evalA of
-    ExprInt x -> pure . ExprInt $ negate x
-    ExprDouble x -> pure . ExprDouble $ negate x
-    x -> throw . RuntimeException $ "Invalid argument to (~): " <> tshow x
+-- | allocate a thunk capturing the current env
+newThunkInCurrentEnv :: Expr -> State EvalState ThunkId
+newThunkInCurrentEnv expr = do
+  s <- get
+  let tid = nextId s
+  put s
+    { heap = IntMap.insert (unThunkId tid) (Thunk (env s) expr) (heap s)
+    , nextId = ThunkId $ unThunkId tid + 1
+    }
+  pure tid
 
-eval (ExprApplication (ExprVariable "!") a) = do
-  evalA <- eval a
-  case evalA of
-    ExprConstructor (Tag "True") (Arity 0) -> pure $ ExprConstructor (Tag "False") (Arity 0)
-    ExprConstructor (Tag "False") (Arity 0) -> pure $ ExprConstructor (Tag "True") (Arity 0)
-    x -> throw . RuntimeException $ "Invalid argument to (!): " <> tshow x
+-- | allocate a thunk with an explicit env
+newThunkWithEnv :: Env -> Expr -> State EvalState ThunkId
+newThunkWithEnv e expr = do
+  s <- get
+  let tid = nextId s
+  put s
+    { heap = IntMap.insert (unThunkId tid) (Thunk e expr) (heap s)
+    , nextId = ThunkId $ unThunkId tid + 1
+    }
+  pure tid
 
-eval (ExprApplication (ExprVariable "show") a) = do
-  evalA <- eval a
-  case evalA of
-    ExprInt n -> pure . ExprString $ tshow n
-    ExprDouble n -> pure . ExprString $ tshow n
-    x -> throw . RuntimeException $ "Invalid argument to show: " <> tshow x
+force :: ThunkId -> State EvalState Value
+force tid = do
+  state <- get
+  case IntMap.lookup (unThunkId tid) (heap state) of
+    Nothing -> throw $ RuntimeException $ "Unknown thunk, id = " <> tshow tid
+    Just (Done v) -> pure v
+    Just BlackHole -> throw $ RuntimeException "Infinite loop detected"
+    Just (Thunk savedEnv expr) -> do
+      -- mark as BlackHole
+      modify $ \s -> s { heap = IntMap.insert (unThunkId tid) BlackHole (heap s) }
+      -- evaluate with the env that was captured when the thunk was created
+      val <- withEnv savedEnv $ whnf expr
+      -- then mark as Done
+      modify $ \s -> s { heap = IntMap.insert (unThunkId tid) (Done val) (heap s) }
+      pure val
 
-eval (App2 (ExprVariable op) a b) = do
-  env <- get
-  case Map.lookup op env of
-    Nothing -> case op of
-      Name "<>" -> evalBinStringOp op a b
-      Name "+"  -> evalBinIntOp op a b
-      Name "-"  -> evalBinIntOp op a b
-      Name "*"  -> evalBinIntOp op a b
-      Name "/"  -> evalBinIntOp op a b
-      Name "+." -> evalBinDoubleOp op a b
-      Name "-." -> evalBinDoubleOp op a b
-      Name "*." -> evalBinDoubleOp op a b
-      Name "/." -> evalBinDoubleOp op a b
-      Name "||" -> evalBinBoolOp op a b
-      Name "&&" -> evalBinBoolOp op a b
-      Name "==" -> evalBinCompOp op a b
-      Name "!=" -> evalBinCompOp op a b
-      Name ">"  -> evalBinCompOp op a b
-      Name ">=" -> evalBinCompOp op a b
-      Name "<"  -> evalBinCompOp op a b
-      Name "<=" -> evalBinCompOp op a b
-      Name "$"  -> eval (ExprApplication a b)
-      x -> throw . RuntimeException $ "Unknown operation: " <> unName x
-    Just expr -> eval $ App2 expr a b
+-- | run an action with a temporary env, restoring the original afterward
+withEnv :: Env -> State EvalState a -> State EvalState a
+withEnv newEnv action = do
+  oldEnv <- gets env
+  modify $ \s -> s { env = newEnv }
+  result <- action
+  modify $ \s -> s { env = oldEnv }
+  pure result
 
--- basic lambda calculus
-eval e@(ExprInt _) = pure e
-eval e@(ExprString _) = pure e
-eval e@(ExprDouble _) = pure e
-eval e@(ExprConstructor _ _) = pure e
-eval e@(ExprLambda _ _) = pure e
-eval (ExprVariable name) = do
-  env <- get
-  case Map.lookup name env of
-    Nothing -> throw . RuntimeException $ "Unbound variable: " <> tshow name
-    Just expr -> eval expr
-eval (ExprLet name binding body) = do
-  modify $ Map.insert name binding
-  eval body
-eval e@(ExprApplication func arg) = do
-  evalFunc <- eval func
-  case evalFunc of
-    (ExprLambda name lambdaExpr) -> do
-      evalArg <- eval arg
-      modify $ Map.insert name evalArg
-      eval lambdaExpr
-    _ | Just _ <- isConstructorApp evalFunc -> do
-      evalArg <- eval arg
-      pure $ ExprApplication evalFunc evalArg
-    x -> throw . RuntimeException $ "Tried to apply something that isn't a function: " <> tshow x
+-- | evaluate an Expr to weak head normal form. this is as far as `force` goes
+whnf :: Expr -> State EvalState Value
+whnf (ExprInt n) = pure $ ValInt n
+whnf (ExprString s) = pure $ ValString s
+whnf (ExprDouble d) = pure $ ValDouble d
+whnf (ExprConstructor tag arity) = pure $ ValConstructor tag arity
+whnf (ExprLambda name body) = do
+  -- capture the current env in the closure
+  currentEnv <- gets env
+  pure $ ValClosure name body currentEnv
+whnf (ExprVariable name) = do
+  currentEnv <- gets env
+  case Map.lookup name currentEnv of
+    Just tid -> force tid
+    Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> tshow name
+whnf (ExprLet name binding body) = do
+  s <- get
+  let tid = nextId s
+      extEnv = Map.insert name tid (env s)
+  put s
+    { heap = IntMap.insert (unThunkId tid) (Thunk extEnv binding) (heap s)
+    , nextId = ThunkId $ unThunkId tid + 1
+    , env = extEnv
+    }
+  whnf body
+-- binary operations
+whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
+  case op of
+    -- primitive ops
+    "<>" -> strBinOp a b
+    "+"  -> intBinOp (+) a b
+    "-"  -> intBinOp (-) a b
+    "*"  -> intBinOp (*) a b
+    "/"  -> intBinOp div a b
+    "+." -> doubleBinOp (+) a b
+    "-." -> doubleBinOp (-) a b
+    "*." -> doubleBinOp (*) a b
+    "/." -> doubleBinOp (/) a b
+    -- TODO: desugar comparison operations into `compare` primitive
+    "==" -> cmpBinOp (==) a b
+    "!=" -> cmpBinOp (/=) a b
+    "<"  -> cmpBinOp (<) a b
+    ">"  -> cmpBinOp (>) a b
+    "<=" -> cmpBinOp (<=) a b
+    ">=" -> cmpBinOp (>=) a b
+    -- TODO: desugar bool operations into `case`
+    "&&" -> lazyAnd a b
+    "||" -> lazyOr a b
+    _    -> do
+      currentEnv <- gets env
+      case Map.lookup (Name op) currentEnv of
+        Just tid -> do
+          funcVal <- force tid
+          afterA <- applyValue funcVal a
+          applyValue afterA b
+        Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
+-- unary operations
+whnf (ExprApplication (ExprVariable (Name op)) arg)
+  | op == "~"    = unaryNeg arg
+  | op == "!"    = unaryNot arg
+  | op == "show" = showPrim arg
+  | otherwise    = do
+      currentEnv <- gets env
+      case Map.lookup (Name op) currentEnv of
+        Just tid -> do
+          funcVal <- force tid
+          applyValue funcVal arg
+        Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> op
+-- function applications
+whnf (ExprApplication func arg) = do
+  funcVal <- whnf func
+  applyValue funcVal arg
+-- case expressions
+whnf (ExprCase scrutinee alts) = do
+  scrutVal <- whnf scrutinee
+  case unApply scrutVal [] of
+    Right (tag, arity, argThunks) -> do
+      let
+        Alternative _ argNames altBody =
+          fromMaybe (throw $ RuntimeException $ "Non-exhaustive patterns for tag: " <> unTag tag) $
+            find (\(Alternative altTag _ _) -> altTag == tag) alts
+      when (length argThunks /= unArity arity) $
+        throw $ RuntimeException $ "Constructor not fully applied: " <> unTag tag
+      when (length argNames /= length argThunks) $
+        throw $ RuntimeException $ "Pattern arity mismatch for constructor: " <> unTag tag
+      -- bind pattern variables to the constructor's argument thunks
+      currentEnv <- gets env
+      let patternEnv = foldr (\(n, t) e -> Map.insert n t e) currentEnv (zip argNames argThunks)
+      withEnv patternEnv (whnf altBody)
+    Left err -> throw $ RuntimeException err
+-- the above should be exhaustive
+whnf x = error $ "Failed pattern match exhaustiveness: " <> show x
 
-eval (ExprCase scrutinee alts) = do
-  evalScrutinee <- eval scrutinee
-  let (tag, args) = tagAndArgs evalScrutinee []
-      Alternative _ argNames altBody = findOrErr ((==tag) . altTag) alts
-  mapM_ (modify . uncurry Map.insert) $ zip argNames args
-  eval altBody
+-- applies a Value to a single Expr argument (always single due to currying)
+applyValue :: Value -> Expr -> State EvalState Value
+applyValue (ValClosure name body closureEnv) arg = do
+  -- allocate the arg thunk in the current env (where arg is evaluated)
+  currentEnv <- gets env
+  argThunk <- newThunkWithEnv currentEnv arg
+  -- evaluate the body in the closure's captured env, extended with the new arg binding
+  let bodyEnv = Map.insert name argThunk closureEnv
+  withEnv bodyEnv $ whnf body
+applyValue (ValConstructor tag arity) arg = do
+  currentEnv <- gets env
+  argThunk <- newThunkWithEnv currentEnv arg
+  pure $ ValApply (ValConstructor tag arity) argThunk
+applyValue (ValApply v t) arg = do
+  currentEnv <- gets env
+  argThunk <- newThunkWithEnv currentEnv arg
+  pure $ ValApply (ValApply v t) argThunk
+applyValue v _ = throw $ RuntimeException $ "Tried to apply something that isn't a function: " <> tshow v
 
-  where
-    tagAndArgs (ExprApplication expr arg) acc = tagAndArgs expr (arg:acc)
-    tagAndArgs e@(ExprConstructor tag (Arity arity)) acc | length acc == arity = (tag, acc)
-    tagAndArgs e _ = throw err
+unApply :: Value -> [ThunkId] -> Either Text (Tag, Arity, [ThunkId])
+unApply (ValConstructor tag arity) acc = Right (tag, arity, acc)
+unApply (ValApply val tid) acc = unApply val (tid:acc)
+unApply _ _ = Left "Not a constructor"
 
-    findOrErr finder = fromMaybe (throw err) . find finder
+intBinOp :: (Integer -> Integer -> Integer) -> Expr -> Expr -> State EvalState Value
+intBinOp op a b = do
+  valA <- whnf a
+  valB <- whnf b
+  case (valA, valB) of
+    (ValInt rawA, ValInt rawB) -> pure . ValInt $ rawA `op` rawB
+    _ -> throw $ RuntimeException "Type error in binary Integer operation"
 
-    err = RuntimeException $ "Couldn't match expression: " <> tshow scrutinee
+doubleBinOp :: (Double -> Double -> Double) -> Expr -> Expr -> State EvalState Value
+doubleBinOp op a b = do
+  valA <- whnf a
+  valB <- whnf b
+  case (valA, valB) of
+    (ValDouble rawA, ValDouble rawB) -> pure . ValDouble $ rawA `op` rawB
+    _ -> throw $ RuntimeException "Type error in binary Double operation"
 
-    altTag (Alternative altTag _ _) = altTag
+cmpBinOp :: (Integer -> Integer -> Bool) -> Expr -> Expr -> State EvalState Value
+cmpBinOp op a b = do
+  valA <- whnf a
+  valB <- whnf b
+  case (valA, valB) of
+    (ValInt rawA, ValInt rawB) ->
+      pure . (\rawBool -> ValConstructor (Tag $ tshow rawBool) $ Arity 0) $ rawA `op` rawB
+    _ -> throw $ RuntimeException "Type error in binary comparison operation"
 
-eval x = error $ "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms: " <> show x
+strBinOp :: Expr -> Expr -> State EvalState Value
+strBinOp a b = do
+  valA <- whnf a
+  valB <- whnf b
+  case (valA, valB) of
+    (ValString rawA, ValString rawB) -> pure . ValString $ rawA <> rawB
+    _ -> throw $ RuntimeException "Type error in string concatenation"
 
-isConstructorApp :: Expr -> Maybe Tag
-isConstructorApp (ExprConstructor tag _) = Just tag
-isConstructorApp (ExprApplication f _) = isConstructorApp f
-isConstructorApp _ = Nothing
+lazyAnd :: Expr -> Expr -> State EvalState Value
+lazyAnd a b = do
+  val <- whnf a
+  case val of
+    ValConstructor (Tag "True") _ -> whnf b
+    ValConstructor (Tag "False") _ -> pure $ ValConstructor (Tag "False") (Arity 0)
+    _ -> throw $ RuntimeException "Invalid argument to (&&)"
 
-evalBinIntOp :: Name -> Expr -> Expr -> State Env Expr
-evalBinIntOp op a b = do
-  evalA <- eval a
-  evalB <- eval b
-  let
-    primOp = case op of
-      Name "+" -> (+)
-      Name "-" -> (-)
-      Name "*" -> (*)
-      Name "/" -> div
-      x -> throw . RuntimeException $ "Unknown binary Integer operation: " <> unName x
-  case (evalA, evalB) of
-    (ExprInt x, ExprInt y) -> pure . ExprInt $ x `primOp` y
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
+lazyOr :: Expr -> Expr -> State EvalState Value
+lazyOr a b = do
+  val <- whnf a
+  case val of
+    ValConstructor (Tag "True") _ -> pure $ ValConstructor (Tag "True") (Arity 0)
+    ValConstructor (Tag "False") _ -> whnf b
+    _ -> throw $ RuntimeException "Invalid argument to (||)"
 
-evalBinDoubleOp :: Name -> Expr -> Expr -> State Env Expr
-evalBinDoubleOp op a b = do
-  evalA <- eval a
-  evalB <- eval b
-  let
-    primOp = case op of
-      Name "+." -> (+)
-      Name "-." -> (-)
-      Name "*." -> (*)
-      Name "/." -> (/)
-      x -> throw . RuntimeException $ "Unknown binary Double operation: " <> unName x
-  case (evalA, evalB) of
-    (ExprDouble x, ExprDouble y) -> pure . ExprDouble $ x `primOp` y
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
+unaryNeg :: Expr -> State EvalState Value
+unaryNeg a = do
+  valA <- whnf a
+  case valA of
+    ValInt rawA -> pure . ValInt $ negate rawA
+    ValDouble rawA -> pure . ValDouble $ negate rawA
+    _ -> throw $ RuntimeException "Invalid argument to (~)"
 
-evalBinStringOp :: Name -> Expr -> Expr -> State Env Expr
-evalBinStringOp op a b = do
-  evalA <- eval a
-  evalB <- eval b
-  let
-    primOp = case op of
-      Name "<>" -> (<>)
-      x -> throw . RuntimeException $ "Unknown binary String operation: " <> unName x
-  case (evalA, evalB) of
-    (ExprString x, ExprString y) -> pure . ExprString $ x `primOp` y
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
+unaryNot :: Expr -> State EvalState Value
+unaryNot a = do
+  valA <- whnf a
+  case valA of
+    ValConstructor (Tag "True") _ -> pure $ ValConstructor (Tag "False") $ Arity 0
+    ValConstructor (Tag "False") _ -> pure $ ValConstructor (Tag "True") $ Arity 0
+    _ -> throw $ RuntimeException "Invalid argument to (!)"
 
-evalBinBoolOp :: Name -> Expr -> Expr -> State Env Expr
-evalBinBoolOp op a b = do
-  evalA <- eval a
-  evalB <- eval b
-  let
-    primOp = case op of
-      Name "&&" -> (&&)
-      Name "||" -> (||)
-      x -> throw . RuntimeException $ "Unknown binary Bool operation: " <> unName x
-  case (evalA, evalB) of
-    (ExprConstructor (Tag x) (Arity 0), ExprConstructor (Tag y) (Arity 0)) -> pure $ ExprConstructor (Tag (tshow $ toBool x `primOp` toBool y)) (Arity 0)
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
-  where toBool "True" = True
-        toBool "False" = False
-        toBool _ = error "evalBinBoolOp"
+showPrim :: Expr -> State EvalState Value
+showPrim a = do
+  val <- whnf a
+  str <- unpackValue val
+  pure $ ValString str
 
-evalBinCompOp :: Name -> Expr -> Expr -> State Env Expr
-evalBinCompOp op a b = do
-  evalA <- eval a
-  evalB <- eval b
-  let
-    primOp :: Ord a => a -> a -> Bool
-    primOp = case op of
-      Name "==" -> (==)
-      Name "!=" -> (/=)
-      Name "<"  -> (<)
-      Name "<=" -> (<=)
-      Name ">"  -> (>)
-      Name ">=" -> (>=)
-      x -> throw . RuntimeException $ "Unknown binary comparison operation: " <> unName x
-  case (evalA, evalB) of
-    (ExprInt x, ExprInt y) -> pure $ ExprConstructor (Tag (tshow (x `primOp` y))) (Arity 0)
-    (ExprDouble x, ExprDouble y) -> pure $ ExprConstructor (Tag (tshow (x `primOp` y))) (Arity 0)
-    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
+deepForce :: Value -> State EvalState ()
+deepForce (ValApply v t) = do
+  innerVal <- force t
+  deepForce innerVal
+  deepForce v
+deepForce _ = pure ()
+
+unpackValue :: Value -> State EvalState Text
+unpackValue (ValInt n) = pure $ tshow n
+unpackValue (ValString s) = pure s
+unpackValue (ValDouble d) = pure $ tshow d
+unpackValue (ValConstructor tag (Arity 0)) = pure $ unTag tag
+unpackValue (ValConstructor tag _) = pure $ "<partially applied " <> unTag tag <> ">"
+unpackValue (ValClosure _ _ _) = pure "<function>"
+unpackValue v = case unApply v [] of
+  Right (tag, _, args) -> do
+    argsText <- forM args $ \tid -> do
+      val <- force tid
+      innerText <- unpackValue val
+      pure $ if T.any (== ' ') innerText then "(" <> innerText <> ")" else innerText
+    pure $ T.unwords (unTag tag : argsText)
+  Left _ -> pure $ "Incomplete evaluation: " <> tshow v

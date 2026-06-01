@@ -1,11 +1,17 @@
--- IGNORE
+-- EXPECT 3
 
 three = if (2 == 3 || 3 < 4) 3 7
 four = ((1 + 6 - 2) * 4) / 5
 
 data Pair = Pair 2
-first p = case p of Pair a b -> a
-second p = case p of Pair a b -> b
+
+first p =
+  case p of
+    Pair a b -> a
+
+second p =
+  case p of
+    Pair a b -> b
 
 f x y = first $ Pair (id x) (second $ Pair 3 y)
 

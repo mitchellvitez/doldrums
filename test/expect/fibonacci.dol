@@ -1,4 +1,3 @@
--- IGNORE
 -- EXPECT 34
 
 main = fib 8

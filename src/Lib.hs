@@ -5,11 +5,12 @@ module Lib
  )
 where
 
+import Language
 import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import FixAst
-import Interpret
+import Interpret (interpret)
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
@@ -76,4 +77,8 @@ runBase programText strat isDebug = do
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
           debug isDebug "OUTPUT" $ pure ()
-          strat . interpret . singleExprForm $ fmap (const ()) program
+          let
+              toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
+              topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
+              mainExpr = ExprVariable "main"
+          strat $ interpret topLevelBindings mainExpr
