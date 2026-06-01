@@ -26,6 +26,7 @@ library
       Lib
       Parse
       Typecheck
+      Compile
   other-modules:
       Paths_doldrums
   hs-source-dirs:

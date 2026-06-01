@@ -11,6 +11,7 @@ import Parse (parseProgram)
 import Typecheck
 import FixAst (fixAst)
 import Interpret (interpret)
+import Compile (compile)
 import Control.Monad (when)
 import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
@@ -63,14 +64,12 @@ runBase programText strat isDebug = do
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
           let program = fixAst (prelude <> unnormalizedBadAritiesProgram)
-          -- let programWithoutPrelude = fixAst unnormalizedBadAritiesProgram
+          let programWithoutPrelude = fixAst unnormalizedBadAritiesProgram
 
-          debug isDebug "AST" . print $ const () <$> program -- WithoutPrelude
-          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> program -- WithoutPrelude
+          debug isDebug "AST" . print $ const () <$> programWithoutPrelude
+          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> programWithoutPrelude
 
-          putStrLn "got to just before typechecking"
           (types, state) <- typeInference program programText
-          putStrLn "got to after typechecking"
           debug isDebug "TYPE" $ do
             let toText (Right x) = pack $ show x
                 toText (Left x) = x
@@ -79,8 +78,14 @@ runBase programText strat isDebug = do
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
           debug isDebug "OUTPUT" $ pure ()
-          let
-              toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
-              topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
-              mainExpr = ExprVariable "main"
-          strat $ interpret topLevelBindings mainExpr
+
+          compile program
+          strat "Compiled."
+
+          -- TODO: turn back on the option to interpret rather than compile
+          --       (this was turned off while building the compiler stages)
+          -- let
+          --     toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
+          --     topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
+          --     mainExpr = ExprVariable "main"
+          -- strat $ interpret topLevelBindings mainExpr
