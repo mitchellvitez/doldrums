@@ -1,0 +1,13 @@
+-- IGNORE
+-- EXPECT Cons (2 (Cons 3 (Cons 4 Nil)))
+
+main = map addOne Cons (1 (Cons 2 (Cons 3 Nil)))
+
+addOne x = x + 1
+
+data List = Nil 0 | Cons 2
+
+map f list =
+  case list of
+    Nil -> Nil
+    Cons x xs -> Cons (f x) (map f xs)

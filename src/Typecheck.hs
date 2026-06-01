@@ -150,12 +150,19 @@ unify sourcePos t (TypeVariable u) = varBind sourcePos u t
 unify _ Int Int = pure emptySubstitution
 unify _ String String = pure emptySubstitution
 unify _ Double Double = pure emptySubstitution
-unify sourcePos a b = throw . TypeCheckingException sourcePos $ fold
-  [ "Type mismatch: "
-  , tshow a
-  , " does not match "
-  , tshow b
-  ]
+unify sourcePos (Tagged (DataType a)) (Tagged (DataType b)) =
+  if a == b
+  then pure emptySubstitution
+  else throwTypeCheckingException sourcePos a b
+unify sourcePos a b = throwTypeCheckingException sourcePos a b
+
+throwTypeCheckingException sourcePos a b =
+  throw . TypeCheckingException sourcePos $ fold
+    [ "Type mismatch: "
+    , tshow a
+    , " does not match "
+    , tshow b
+    ]
 
 varBind :: SourcePos -> Name -> Type -> TypeInstantiation Substitution
 varBind sourcePos u t
@@ -292,31 +299,32 @@ typeInference program programText = do
 
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
-  -- prim25 = "Bool" for now
   [ (Name "+", Int :-> Int :-> Int )
   , (Name "+.", Double :-> Double :-> Double )
-  , (Name "==", tvar "prim7" :-> tvar "prim8" :-> tvar "prim25")
+  , (Name "==", tvar "prim7" :-> tvar "prim8" :-> Tagged (DataType "Bool"))
   , (Name "-", tvar "prim9" :-> tvar "prim9" :-> tvar "prim9")
-  , (Name "||", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
-  , (Name "<", tvar "prim10" :-> tvar "prim10" :-> tvar "prim25")
+  , (Name "||", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
+  , (Name "<", tvar "prim10" :-> tvar "prim10" :-> Tagged (DataType "Bool"))
   , (Name "/", tvar "prim11" :-> tvar "prim11" :-> tvar "prim11")
   , (Name "const", tvar "prim13" :-> tvar "prim14" :-> tvar "prim13")
   , (Name "const2", tvar "prim15" :-> tvar "prim16" :-> tvar "prim16")
   , (Name "~", tvar "prim17" :-> tvar "prim17")
   , (Name "*", Int :-> Int :-> Int)
+  , (Name "*.", Double :-> Double :-> Double)
   , (Name "negate", tvar "prim18" :-> tvar "prim18")
   , (Name "twice", (tvar "prim19" :-> tvar "prim19") :-> tvar "prim19")
   , (Name "id", tvar "prim20" :-> tvar "prim20")
-  , (Name ">", tvar "prim21" :-> tvar "prim21" :-> tvar "prim25")
+  , (Name ">", tvar "prim21" :-> tvar "prim21" :-> Tagged (DataType "Bool"))
   , (Name "compose", (tvar "prim23" :-> tvar "prim24") :-> (tvar "prim22" :-> tvar "prim23") :-> tvar "prim22" :-> tvar "prim24")
-  , (Name "<=", tvar "prim27" :-> tvar "prim27" :-> tvar "prim25")
-  , (Name "!=", tvar "prim28" :-> tvar "prim28" :-> tvar "prim25")
-  , (Name ">=", tvar "prim29" :-> tvar "prim29" :-> tvar "prim25")
-  , (Name "&&", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
-  , (Name "and", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
-  , (Name "not", tvar "prim25" :-> tvar "prim25")
-  , (Name "or", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
-  , (Name "xor", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
+  , (Name "<=", tvar "prim27" :-> tvar "prim27" :-> Tagged (DataType "Bool"))
+  , (Name "!=", tvar "prim28" :-> tvar "prim28" :-> Tagged (DataType "Bool"))
+  , (Name ">=", tvar "prim29" :-> tvar "prim29" :-> Tagged (DataType "Bool"))
+  , (Name "&&", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
+  , (Name "and", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
+  , (Name "not", Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
+  , (Name "or", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
+  , (Name "xor", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
   , (Name "<>", String :-> String :-> String)
+  , (Name "compare", tvar "prim30" :-> tvar "prim30" :-> Tagged (DataType "Ordering"))
   ]
   where tvar = TypeVariable . Name
