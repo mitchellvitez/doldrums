@@ -1,0 +1,7 @@
+-- BROKEN
+
+f c = case c of
+       True -> "test"
+       False -> 7
+
+main = f False

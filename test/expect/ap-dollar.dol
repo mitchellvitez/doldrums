@@ -1,0 +1,6 @@
+-- EXPECT 49
+
+main = square $ addOne $ double 3
+square x = x*x
+addOne x = x + 1
+double x = x + x

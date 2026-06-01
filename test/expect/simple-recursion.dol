@@ -1,0 +1,5 @@
+-- EXPECT 1
+
+main = f 1
+
+f x = if (x == 0) 1 (f (x - 1))

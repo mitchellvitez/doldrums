@@ -292,7 +292,6 @@ primitiveTypes = Map.fromList
   -- prim25 = "Bool" for now
   [ (Name "+", Int :-> Int :-> Int )
   , (Name "+.", Double :-> Double :-> Double )
-  , (Name "if", tvar "prim25" :-> tvar "prim5" :-> tvar "prim6")
   , (Name "==", tvar "prim7" :-> tvar "prim8" :-> tvar "prim25")
   , (Name "-", tvar "prim9" :-> tvar "prim9" :-> tvar "prim9")
   , (Name "||", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")

@@ -1,0 +1,8 @@
+-- EXPECT 64
+
+f p = (id p) * p
+double n =
+  let
+    b = 2
+  in n * b
+main = f (double 4)

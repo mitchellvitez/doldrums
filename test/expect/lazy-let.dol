@@ -1,0 +1,11 @@
+-- EXPECT 7
+
+main =
+  let
+    d = e
+    a = b
+    f = 7
+    c = d
+    e = f
+    b = c
+  in f

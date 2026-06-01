@@ -1,5 +1,10 @@
 data Bool = True 0 | False 0
 
+if cond then else =
+  case cond of
+    True -> then
+    False -> else
+
 id x = x
 const x y = x
 const2 x y = y

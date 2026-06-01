@@ -1,0 +1,10 @@
+-- IGNORE
+
+main = fib 8
+
+fib n =
+  -- TODO: handle casing on literals/variables (not just constructors)
+  case n of
+    0 -> 1
+    1 -> 1
+    n -> fib (n - 1) + fib (n - 2)))

@@ -1,0 +1,7 @@
+-- BROKEN
+
+data Bool = False 0 | True 0
+
+data Bool = True 2
+
+main = True

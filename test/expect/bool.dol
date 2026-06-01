@@ -1,0 +1,8 @@
+-- EXPECT 3
+
+myIf c t f =
+  case c of
+    True -> t
+    False -> f
+
+main = myIf (1 < 2) 3 4

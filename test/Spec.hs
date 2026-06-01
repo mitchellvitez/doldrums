@@ -1,372 +1,97 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-import Language
-import Parse
 import Lib (runTest)
-import Typecheck
+import Parser (parserSpec)
 
-import Data.Either
-import Data.Text
+import Control.Monad
+import Control.Applicative
+import Data.Maybe
+import Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import Test.Hspec
-import Text.Megaparsec
-import Text.RawString.QQ (r)
+import Control.Exception (try, SomeException)
 
-testParser :: (Show a, Eq a) => Parser a -> Text -> a -> Expectation
-testParser parser input output =
-  parse parser "" input `shouldBe` Right output
-
-testProgramParser :: Parser (Program SourcePos) -> Text -> Program () -> Expectation
-testProgramParser parser input output =
-  (ignoreAnnotations <$> parse parser "" input) `shouldBe` Right output
-  where
-    ignoreAnnotations (Program funcs datas) = Program funcs' datas
-      where funcs' = Prelude.map (\(Function annot name args expr) -> Function () name args (const () <$> expr)) funcs
-
-testParserFail :: (Show a, Eq a) => Parser a -> Text -> Expectation
-testParserFail parser input =
-  parse parser "" input `shouldSatisfy` isLeft
-
-testProgram :: Text -> Text -> Expectation
-testProgram expectedOutput programText = do
-  runTest programText `shouldReturn` expectedOutput
-
-testProgramException :: Text -> Expectation
-testProgramException programText = do
-  runTest programText `shouldThrow` anyException
+import System.Directory (listDirectory)
+import System.FilePath ((</>), takeExtension, dropExtension)
 
 main :: IO ()
 main = hspec $ do
-  describe "typechecking" $ do
-    it "num plus string - parses" $ do
-      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function () "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
+  -- test how the parser handles pieces smaller than an entire program
+  parserSpec
 
-    it "num plus string" $ do
-      testProgramException "main = 1 + \"hello\""
+  -- IGNORE will skip an EXPECT or BROKEN test, as an `xit` rather than an `it`
 
-  describe "laziness" $ do
-    xit "regression test for recursive let and arithmetic ops" $ do
-      testProgram "4" [r|
-three = 3
-four = ((1 + 6 - 2) * 4) / 5
+  -- test programs that should work and produce a specified output
+  -- these programs start with a comment like:
+  -- -- EXPECT output
+  describe "expect tests" $ do
+    files <- runIO $ discoverDolFiles "test/expect"
+    mapM_ mkDolTest files
 
-pair x y f = f x y
-fst p = p const
-snd p = p const2
-f x y = let a = pair x b, b = pair y a in fst (snd (snd (snd a)))
-main = f three four
-|]
+  -- test programs that should not work
+  -- these programs start with:
+  -- -- BROKEN
+  describe "broken program tests" $ do
+    files <- runIO $ discoverDolFiles "test/broken"
+    mapM_ mkDolTest files
 
-    it "lazy let" $ do
-      testProgram "7" [r|
-main =
-  let
-    d = e
-    a = b
-    f = 7
-    c = d
-    e = f
-    b = c
-  in f
-|]
+data TestDirective
+  = ExpectDirective Text
+  | IgnoreDirective
+  | BrokenDirective
+  | MissingDirective
 
-    it "mutually recursive functions" $ do
-      testProgram "-1" [r|
-f n = if (n < 0) n (g (n - 1))
-g n = f (n - 1)
-main = f 3
-|]
+data TestProgram = TestProgram
+  { name :: Text
+  , content :: Text
+  , directive :: TestDirective
+  }
 
-    it "any top-level order" $ do
-      testProgram "7" [r|
-main = b
-b = c
-a = 7
-c = a
-|]
+type ProgramContent = Text
 
-  describe "program output" $ do
-    it "constant" $ do
-      testProgram "3" "main = 3"
+discoverDolFiles :: FilePath -> IO [TestProgram]
+discoverDolFiles dir = do
+  entries <- listDirectory dir
+  let dolFiles = filter ((== ".dol") . takeExtension) entries
+  forM dolFiles $ \file -> do
+    content <- TIO.readFile $ dir </> file
+    let name = T.pack $ dropExtension file
+        (directive, program) = parseHeader content
+    pure $ TestProgram name program directive
 
-    it "negation" $ do
-      testProgram "-3" "main = negate 3"
+parseHeader :: Text -> (TestDirective, ProgramContent)
+parseHeader text = fromMaybe (MissingDirective, text) $ do
+  (firstLine : rest) <- Just $ T.lines text
+  let body = T.unlines $ dropWhile T.null rest
+  pure (parseDirective firstLine, body)
+  where
+    parseDirective :: Text -> TestDirective
+    parseDirective line = fromMaybe MissingDirective $
+          ExpectDirective <$> T.stripPrefix "-- EXPECT " line
+      <|> BrokenDirective <$  T.stripPrefix "-- BROKEN"  line
+      <|> IgnoreDirective <$  T.stripPrefix "-- IGNORE"  line
 
-    it "indirection" $ do
-      testProgram "-3" "main = negate (id 3)"
-
-    it "double negation" $ do
-      testProgram "3" "main = twice negate 3"
-
-    it "explicit double negation" $ do
-      testProgram "3" "main = negate (negate 3)"
-
-    it "explicit double negation with $" $ do
-      testProgram "3" "main = negate $ negate 3"
-
-    it "more complex program" $ do
-      testProgram  "64" [r|
-f p = (id p) * p
-double n =
-  let
-    b = 2
-  in n * b
-main = f (double 4)
-|]
-
-    it "composition" $ do
-      testProgram "11" [r|
-add1 x = x + 1
-times2 x = x * 2
-math x = compose add1 times2 x
-main = math 5
-|]
-
-    it "ap $" $ do
-      testProgram "49" [r|
-main = square $ addOne $ double 3
-square x = x*x
-addOne x = x + 1
-double x = x + x
-|]
-
-  describe "parsing" $ do
-    it "parseNumber" $ do
-      testParser parseExprLiteral "42" (ExprInt 42)
-
-    it "parseExprVariable" $ do
-      testParser parseExprVariable "myVar" (ExprVariable "myVar")
-      testParser parseExprVariable "var2" (ExprVariable "var2")
-      testParser parseExprVariable "my_var" (ExprVariable "my_var")
-      testParserFail parseExprVariable "'var'"
-
-    it "parseName" $ do
-      testParser parseName "x" "x"
-      testParserFail parseName "X"
-      testParser parseName "letMeIn" "letMeIn"
-      testParser parseName "innocent" "innocent"
-      testParser parseName "ofCourse" "ofCourse"
-      testParser parseName "pack" "pack"
-      testParserFail parseName "Packed"
-      testParserFail parseName "4eva"
-      testParserFail parseName "let"
-      testParserFail parseName "in"
-      testParserFail parseName "of"
-      testParserFail parseName "Pack"
-
-    it "$" $ do
-      testProgramParser parseProgram [r|
-main = negate $ negate 3
-|]
-        (Program [Function () "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprInt 3)))] [])
-
-    it "parseExprConstructor" $ do
-      testParser parseExprConstructor "True" (ExprConstructor "True" (-1))
-      testParser parseExprConstructor "False" (ExprConstructor "False" (-1))
-
-    it "parseDefinition" $ do
-      testParser parseDefinition "x = 2" ("x", ExprInt 2)
-
-    it "parseExprCase" $ do
-      testParser parseExprCase "case maybe of\n  Nothing -> 0\n  Just x -> x" (ExprCase (ExprVariable "maybe") [Alternative "Nothing" [] (ExprInt 0), Alternative "Just" ["x"] (ExprVariable "x")])
-
-    it "parseExprLet" $ do
-      testParser parseExprLet "let\n  x = 2\nin x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
-      testParser parseExprLet "let\n  x = 2\n  y = 3\nin x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
-      testParser parseExprLet "let\n  x = 2\nin\nlet\n  y = 3\nin x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
-
-    it "parseExprLambda" $ do
-      testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))
-      testParser parseExprLambda "\\x y -> x" (ExprLambda "x" (ExprLambda "y" (ExprVariable "x")))
-
-    it "parseProgram" $ do
-      testProgramParser parseProgram [r|
-id x = x
-main = id 2
-|]
-        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
-
-    it "parseExprApplication" $ do
-      testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
-
-    it "parses a simple doubling program" $ do
-      testProgramParser parseProgram [r|
-main = double 21
-double x = x + x
-|]
-        (Program [ Function () "main" [] (ExprApplication (ExprVariable "double") (ExprInt 21))
-        , Function () "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
-        ] [])
-
-    it "parses a program with many functions" $ do
-      testProgramParser parseProgram [r|
-id x = x
-f p = (id p) * p
-double n = n * 2
-main = f (double 4)
-|]
-        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprInt 2)), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprInt 4)))] [])
-
-
-  describe "test full programs - " $ do
-    it "hello world" $ do
-      testProgram "\"Hello, world!\"" [r|
-main = "Hello, world!"
-|]
-
-    xit "fibonacci" $ do
-      testProgram "34" [r|
-main = fib 8
-
-fib n =
-  if (n == 0) 1 (
-  if (n == 1) 1 (
-  fib (n - 1) + fib (n - 2)))
-|]
-
-    xit "fibonacci with case" $ do
-      testProgram "34" [r|
-main = fib 8
-
-fib n =
-  case n of
-    0 -> 1
-    1 -> 1
-    n -> fib (n - 1) + fib (n - 2)))
-|]
-
-    xit "pair of arithmetic ops" $ do
-      testProgram "3" [r|
-three = if (2 == 3 || 3 < 4) 3 7
-four = ((1 + 6 - 2) * 4) / 5
-
-data Pair = Pair 2
-first p = case p of Pair a b -> a
-second p = case p of Pair a b -> b
-
-f x y = first $ Pair (id x) (second $ Pair 3 y)
-
-main =
-  f three (id four)
-|]
-
-    it "simple recursion" $ do
-      testProgram "1" [r|
-main = f 1
-f x = if (x == 0) 1 (f (x - 1))
-|]
-
-    it "factorial no $" $ do
-      testProgram "720" [r|
-main = fac (5 + 1)
-fac n = if (n == 0) 1 (n * fac (n-1))
-|]
-
-    it "factorial" $ do
-      testProgram "720" [r|
-main = fac $ 5 + 1
-fac n = if (n == 0) 1 $ n * fac (n-1)
-|]
-
-    it "bool" $ do
-      testProgram "3" [r|
-myIf c t f =
-  case c of
-    True -> t
-    False -> f
-
-main = myIf (1 < 2) 3 4
-|]
-
-    it "length of list" $ do
-      testProgram "2" [r|
-data List = Nil 0 | Cons 2
-
-length list =
-  case list of
-    Nil -> 0
-    Cons x xs -> 1 + length xs
-
-main = length $ Cons 1 $ Cons 2 Nil
-|]
-
-    it "maybe withDefault" $ do
-      testProgram "9" [r|
-data Maybe = Nothing 0 | Just 1
-
-withDefault maybe default =
-  case maybe of
-    Nothing -> default
-    Just x -> x
-
-main = withDefault Nothing 7 + withDefault (Just 2) 4
-|]
-
-    xit "maybe withDefault - case with hanging indent" $ do
-      testProgram "9" [r|
-data Maybe = Nothing 0 | Just 1
-
-withDefault maybe default = case maybe of
-  Nothing -> default
-  Just x -> x
-
-main = withDefault Nothing 7 + withDefault (Just 2) 4
-|]
-
-    it "negative numbers self-recursion" $ do
-      testProgram "-6" [r|
-g n = if (n < negate 5) n $ g (n - 1)
-main = g 3
-|]
-
-    it "negative numbers" $ do
-      testProgram "-6" [r|
-main = 14 - 20
-|]
-
-    it "two functions with the same name" $ do
-      testProgramException [r|
-f x = x
-f y = y
-main = f "hello"
-|]
-
-    it "two constructors with the same name" $ do
-      testProgramException [r|
-data Bool = False 0 | True 0
-data Bool = True 2
-main = True
-|]
-
-    it "case with different result types" $ do
-      testProgramException [r|
-f c = case c of
-  True -> "test"
-  False -> 7
-
-main = f False
-|]
-
-    xit "indentation test" $ do
-      testProgram "7" [r|
-indent =
-  let
-    x = 1
-    y = 2
-  in x + y
-
-hangingIndent = let
-  x = 1
-  y = 2
-  in x + y
-
-oneLiner = let x = 1 in x
-
-main = indent + hangingIndent + oneLiner
-|]
-
-    xit "text concatenation" $ do
-      testProgram "hello world" [r|
-main = "hello" <> " " <> "world"
-|]
+mkDolTest :: TestProgram -> SpecWith ()
+mkDolTest (TestProgram name _ IgnoreDirective) =
+  xit (T.unpack name) pending
+mkDolTest (TestProgram name content BrokenDirective) =
+  it (T.unpack name) $ do
+    result <- try $ runTest content
+    case result of
+      Right _ -> expectationFailure "Expected an exception but program succeeded"
+      Left (e :: SomeException) -> do
+        TIO.putStrLn $ "  " <> T.pack (show e)
+mkDolTest (TestProgram name content (ExpectDirective expected)) =
+  it (T.unpack name) $ do
+    output <- runTest content
+    output `shouldBe` expected
+mkDolTest (TestProgram name _ MissingDirective) =
+  it (T.unpack name) $
+    expectationFailure $
+      "No test directive found in " <> T.unpack name <> ".dol\n" <>
+      "Tests must start with one of:\n" <>
+      "-- EXPECT <output>\n" <>
+      "-- BROKEN\n" <>
+      "-- IGNORE\n"

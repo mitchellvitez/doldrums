@@ -1,0 +1,6 @@
+-- EXPECT 7
+
+main = b
+b = c
+a = 7
+c = a

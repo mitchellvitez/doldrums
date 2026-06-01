@@ -1,0 +1,3 @@
+-- EXPECT -3
+
+main = negate (id 3)

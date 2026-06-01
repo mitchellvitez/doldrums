@@ -1,0 +1,7 @@
+-- BROKEN
+
+f x = x
+
+f y = y
+
+main = f "hello"

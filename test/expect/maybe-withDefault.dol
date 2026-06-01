@@ -1,0 +1,10 @@
+-- EXPECT 9
+
+data Maybe = Nothing 0 | Just 1
+
+withDefault maybe default =
+  case maybe of
+    Nothing -> default
+    Just x -> x
+
+main = withDefault Nothing 7 + withDefault (Just 2) 4
