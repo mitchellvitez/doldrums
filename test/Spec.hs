@@ -225,6 +225,17 @@ fib n =
   fib (n - 1) + fib (n - 2)))
 |]
 
+    xit "fibonacci with case" $ do
+      testProgram "34" [r|
+main = fib 8
+
+fib n =
+  case n of
+    0 -> 1
+    1 -> 1
+    n -> fib (n - 1) + fib (n - 2)))
+|]
+
     xit "pair of arithmetic ops" $ do
       testProgram "3" [r|
 three = if (2 == 3 || 3 < 4) 3 7
@@ -353,4 +364,9 @@ hangingIndent = let
 oneLiner = let x = 1 in x
 
 main = indent + hangingIndent + oneLiner
+|]
+
+    xit "text concatenation" $ do
+      testProgram "hello world" [r|
+main = "hello" <> " " <> "world"
 |]

@@ -10,6 +10,7 @@ module Graphviz
 where
 
 import Language
+import Control.Monad (when, forM)
 import Control.Monad.State
 import Data.Foldable
 import Data.Map (Map)

@@ -1,10 +1,4 @@
-cabal-version: 1.12
-
--- This file has been generated from package.yaml by hpack version 0.34.4.
---
--- see: https://github.com/sol/hpack
---
--- hash: 12a04079be4d6cfbbf91005a98bd6a1138902fad6343ca48433f803ed00b9724
+cabal-version: 3.0
 
 name:           doldrums
 version:        0.1.0.0
@@ -46,22 +40,20 @@ library
       BangPatterns
   build-depends:
       base >=4.7 && <5
-    , constraints >=0.12 && <1
-    , containers >=0.6 && <1
-    , deepseq >=1.4 && <2
-    , heap >=1.0 && <2
-    , hspec >=2.7 && <3
-    , megaparsec >=8.0 && <9
-    , mtl >=2.2 && <3
-    , parser-combinators >=1.2 && <2
-    , raw-strings-qq >=1.1 && <2
-    , text >=1.2 && <2
+    , constraints >=0.12
+    , containers >=0.6
+    , deepseq >=1.4
+    , heap >=1.0
+    , hspec >=2.7
+    , megaparsec >=8.0
+    , mtl >=2.2
+    , parser-combinators >=1.2
+    , raw-strings-qq >=1.1
+    , text >=1.2
   default-language: Haskell2010
 
-executable doldrums-exe
+executable doldrums
   main-is: Main.hs
-  other-modules:
-      Paths_doldrums
   hs-source-dirs:
       app
   default-extensions:
@@ -75,24 +67,12 @@ executable doldrums-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
-    , constraints >=0.12 && <1
-    , containers >=0.6 && <1
-    , deepseq >=1.4 && <2
     , doldrums
-    , heap >=1.0 && <2
-    , hspec >=2.7 && <3
-    , megaparsec >=8.0 && <9
-    , mtl >=2.2 && <3
-    , parser-combinators >=1.2 && <2
-    , raw-strings-qq >=1.1 && <2
-    , text >=1.2 && <2
   default-language: Haskell2010
 
 test-suite doldrums-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
-  other-modules:
-      Paths_doldrums
   hs-source-dirs:
       test
   default-extensions:
@@ -106,15 +86,9 @@ test-suite doldrums-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
-    , constraints >=0.12 && <1
-    , containers >=0.6 && <1
-    , deepseq >=1.4 && <2
     , doldrums
-    , heap >=1.0 && <2
-    , hspec >=2.7 && <3
-    , megaparsec >=8.0 && <9
-    , mtl >=2.2 && <3
-    , parser-combinators >=1.2 && <2
-    , raw-strings-qq >=1.1 && <2
-    , text >=1.2 && <2
+    , hspec >=2.7
+    , megaparsec >=8.0
+    , raw-strings-qq >=1.1
+    , text >=1.2
   default-language: Haskell2010

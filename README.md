@@ -8,7 +8,7 @@
 
 Doldrums is a small, purely functional programming language with an emphasis on ease of top-to-bottom understanding. I've been meaning to play with a language like this ever since making [Pixll](https://github.com/mitchellvitez/raspi-lights). This is a great way for me to learn. It's probably not very useful for anything in practice.
 
-The compiler is written in Haskell. Run `stack run test.dol` to see an example.
+The compiler is written in Haskell. Use `cabal run doldrums -- test.dol` to run an example program, or `cabal test` to see what programs are currently working.
 
 ### Structure
 

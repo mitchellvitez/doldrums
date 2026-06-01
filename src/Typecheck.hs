@@ -13,6 +13,7 @@ where
 import Language
 import FixAst (singleExprForm)
 
+import Control.Monad (foldM, forM)
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.Reader
