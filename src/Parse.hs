@@ -152,12 +152,15 @@ prefixOp name = Prefix $ prefixOpAST name <$ (lexemeNewline . try) (string name)
 prefixOpAST :: Text -> Expr -> Expr
 prefixOpAST name expr = ExprApplication (ExprVariable (Name name)) expr
 
+parseLiteral :: Parser Literal
+parseLiteral =
+  try (LiteralFloat <$> parseDouble) <|>
+  LiteralInt <$> parseInt            <|>
+  LiteralString <$> parseString
+
 parseExprLiteral :: Parser Expr
 parseExprLiteral =
-  try (ExprDouble <$> parseDouble) <|>
-  ExprInt <$> parseInt             <|>
-  ExprString <$> parseString       <|>
-  parseExprConstructor
+  ExprLiteral <$> parseLiteral
 
 parseExprConstructor :: Parser Expr
 parseExprConstructor = do
@@ -181,13 +184,19 @@ parseExprCase =
     lexeme $ string "of"
     pure $ L.IndentSome Nothing (pure . ExprCase scrutinee) parseCaseAlternative
 
+parsePattern :: Parser Pattern
+parsePattern =
+  PatternVar <$> parseName <|>
+  PatternWildcard <$ lexeme (char '_') <|>
+  PatternLiteral <$> parseLiteral <|>
+  PatternConstructor <$> parseTag <*> many parsePattern
+
 parseCaseAlternative :: Parser (CaseAlternative ())
 parseCaseAlternative = do
-  caseName <- parseTag
-  names <- many parseName
+  pat <- parsePattern
   lexeme $ string "->"
   expr <- parseExpr
-  pure $ Alternative caseName names expr
+  pure $ Alternative pat expr
 
 parseDefinition :: Parser (Name, Expr)
 parseDefinition = do
