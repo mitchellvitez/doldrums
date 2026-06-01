@@ -123,6 +123,7 @@ instance Functor AnnotatedExpr where
 --   | ExprApplication Expr Expr
 --   | ExprLet Name Expr Expr
 --   | ExprLambda Name Expr
+--   | ExprCase Expr [CaseAlternative]
 --   deriving (Show, Eq, Ord)
 
 type Expr = AnnotatedExpr ()

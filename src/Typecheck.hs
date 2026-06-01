@@ -232,10 +232,10 @@ typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
       removeArgsFromType n (a :-> b) = removeArgsFromType (n-1) b
       removeArgsFromType _ _ = error "bad case pattern match"
   let altExprs = map toNestedLambdas alts
-  altExprTypes :: [(Substitution, Type)] <- forM altExprs $ \(numArgs, expr) -> do
+  altExprTypes@(firstAltExprType:_) :: [(Substitution, Type)] <- forM altExprs $ \(numArgs, expr) -> do
     (s, t) <- typeCheckExpr env expr
     pure (s, removeArgsFromType numArgs t)
-  foldM foldAction (head altExprTypes) altExprTypes
+  foldM foldAction firstAltExprType altExprTypes
   where
     foldAction :: (Substitution, Type) -> (Substitution, Type) -> TypeInstantiation (Substitution, Type)
     foldAction (s1, t1) (s2, t2) = do
@@ -270,7 +270,10 @@ typeInference program programText = do
   (runTypeInstantiation . infer initialEnvironment $ singleExprForm program)
     `catch` typecheckingFailureHandler programText
   where
-    initialEnvironment = Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $ Map.toList primitiveTypes <> initialFunctionTypes program 1
+    initialEnvironment =
+      Map.insert (Name "show") (Scheme [Name "a"] (TypeVariable (Name "a") :-> String)) $
+      Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $
+      Map.toList primitiveTypes <> initialFunctionTypes program 1
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
     initialFunctionTypes (Program [] []) _ = []
     initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
@@ -314,5 +317,6 @@ primitiveTypes = Map.fromList
   , (Name "not", tvar "prim25" :-> tvar "prim25")
   , (Name "or", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
   , (Name "xor", tvar "prim25" :-> tvar "prim25" :-> tvar "prim25")
+  , (Name "<>", String :-> String :-> String)
   ]
   where tvar = TypeVariable . Name

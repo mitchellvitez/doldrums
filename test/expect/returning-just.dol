@@ -1,0 +1,5 @@
+-- EXPECT Just 7
+
+data Maybe = Nothing 0 | Just 1
+
+main = Just (5 + 2)

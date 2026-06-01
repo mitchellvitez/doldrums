@@ -1,0 +1,5 @@
+-- EXPECT x = 7
+
+main = "x = " <> show x
+
+x = 7

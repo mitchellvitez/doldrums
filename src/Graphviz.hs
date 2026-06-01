@@ -125,9 +125,17 @@ functionToGraphviz functionNames (Function annot name args body) = fold
   , annotation body `pointsTo` annot
   ]
 
+escapeQuotes :: Text -> Text
+escapeQuotes = T.concatMap escape
+  where
+    escape '"'  = "\\\""
+    escape '\\' = "\\\\"
+    escape '\n' = "\\n"
+    escape c    = T.singleton c
+
 exprToGraphviz :: Set Name -> AnnotatedExpr Integer -> Text
 exprToGraphviz _ (AnnExprInt n x) = node n $ tshow x
-exprToGraphviz _ (AnnExprString n s) = node n $ tshow s
+exprToGraphviz _ (AnnExprString n s) = node n $ escapeQuotes $ tshow s
 exprToGraphviz _ (AnnExprDouble n d) = node n $ tshow d
 exprToGraphviz _ (AnnExprConstructor n (Tag t) a) =
   node n t

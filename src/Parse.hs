@@ -20,14 +20,17 @@ type Parser = Parsec Void Text
 
 spaceConsumerNewline :: Parser ()
 spaceConsumerNewline =
-  L.space space1 (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
+  L.space space1 (L.skipLineComment "--") (L.skipBlockComment "{-" "-}")
 
 spaceConsumer :: Parser ()
 spaceConsumer =
-  L.space (Control.Monad.void $ oneOf (" \t" :: String)) (L.skipLineComment "--") (L.skipBlockComment "/*" "*/")
+  L.space (Control.Monad.void $ oneOf (" \t" :: String)) (L.skipLineComment "--") (L.skipBlockComment "{-" "-}")
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
+
+lexemeNewline :: Parser a -> Parser a
+lexemeNewline = L.lexeme spaceConsumerNewline
 
 data TopLevel a = Decl DataDeclaration | Func (Function a)
 
@@ -58,7 +61,7 @@ parseFunction :: Parser (Function SourcePos)
 parseFunction = do
   name <- parseName
   args <- many parseName
-  symbol "="
+  L.symbol' spaceConsumerNewline "=" >> return ()
   body <- parseAnnotatedExpr
   sourcePos <- getSourcePos
   pure $ Function sourcePos name args body
@@ -113,6 +116,7 @@ opTable =
     , binaryOp "-."
     , binaryOp "+"
     , binaryOp "-"
+    , binaryOp "<>"
     ]
   -- level 3
   , [ binaryOp ">="
@@ -134,7 +138,7 @@ opTable =
   ]
 
 binaryOp :: Text -> Operator Parser Expr
-binaryOp name = InfixR $ binaryOpAST name <$ (lexeme . try) (string name)
+binaryOp name = InfixR $ binaryOpAST name <$ (lexemeNewline . try) (string name)
 
 binaryOpAST :: Text -> Expr -> Expr -> Expr
 binaryOpAST "$" expr1 expr2 =
@@ -143,7 +147,7 @@ binaryOpAST name expr1 expr2 =
   ExprApplication (ExprApplication (ExprVariable (Name name)) expr1) expr2
 
 prefixOp :: Text -> Operator Parser Expr
-prefixOp name = Prefix $ prefixOpAST name <$ (lexeme . try) (string name)
+prefixOp name = Prefix $ prefixOpAST name <$ (lexemeNewline . try) (string name)
 
 prefixOpAST :: Text -> Expr -> Expr
 prefixOpAST name expr = ExprApplication (ExprVariable (Name name)) expr
@@ -202,8 +206,8 @@ parseExprLambda = do
 
 parseExprApplication :: Parser Expr
 parseExprApplication = do
-  exprs <- some parseAtomicExpr
-  pure $ Prelude.foldl ExprApplication (Prelude.head exprs) (Prelude.tail exprs)
+  (firstExpr:restExprs) <- some parseAtomicExpr
+  pure $ Prelude.foldl ExprApplication firstExpr restExprs
 
 parseAtomicExpr :: Parser Expr
 parseAtomicExpr =

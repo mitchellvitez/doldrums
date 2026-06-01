@@ -40,7 +40,8 @@ getFileText :: IO Text
 getFileText = do
   args <- getArgs
   when (length args /= 1) $ error "requires one filename arg"
-  input <- readFile $ head args
+  let (filename:_) = args
+  input <- readFile filename
   pure $ pack input
 
 debug :: Bool -> Text -> IO () -> IO ()

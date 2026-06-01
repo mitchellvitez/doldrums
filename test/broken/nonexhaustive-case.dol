@@ -1,0 +1,6 @@
+-- BROKEN
+
+f x = case x of
+  True -> 1
+
+main = f False

@@ -21,11 +21,11 @@ interpret program = unpackExpr . fst $ runState (eval program) Map.empty
 
 unpackExpr :: Expr -> Text
 unpackExpr (ExprInt n) = tshow n
-unpackExpr (ExprString s) = tshow s
+unpackExpr (ExprString s) = s
 unpackExpr (ExprDouble d) = tshow d
-unpackExpr (ExprConstructor tag arity) = tshow tag
+unpackExpr (ExprConstructor tag arity) = unTag tag
 unpackExpr x = case tagAndArgs x [] of
-  Just (tag, args) -> "(" <> unTag tag <> " " <> T.intercalate " " (map unpackExpr args) <> ")"
+  Just (tag, args) -> unTag tag <> " " <> T.intercalate " " (map unpackExpr args)
   Nothing -> "Incomplete evaluation: " <> tshow x
   where
     tagAndArgs (ExprApplication expr arg) acc = tagAndArgs expr (arg:acc)
@@ -71,10 +71,18 @@ eval (ExprApplication (ExprVariable "!") a) = do
     ExprConstructor (Tag "False") (Arity 0) -> pure $ ExprConstructor (Tag "True") (Arity 0)
     x -> throw . RuntimeException $ "Invalid argument to (!): " <> tshow x
 
+eval (ExprApplication (ExprVariable "show") a) = do
+  evalA <- eval a
+  case evalA of
+    ExprInt n -> pure . ExprString $ tshow n
+    ExprDouble n -> pure . ExprString $ tshow n
+    x -> throw . RuntimeException $ "Invalid argument to show: " <> tshow x
+
 eval (App2 (ExprVariable op) a b) = do
   env <- get
   case Map.lookup op env of
     Nothing -> case op of
+      Name "<>" -> evalBinStringOp op a b
       Name "+"  -> evalBinIntOp op a b
       Name "-"  -> evalBinIntOp op a b
       Name "*"  -> evalBinIntOp op a b
@@ -116,12 +124,10 @@ eval e@(ExprApplication func arg) = do
       evalArg <- eval arg
       modify $ Map.insert name evalArg
       eval lambdaExpr
-    (ExprConstructor _ _) -> pure e
-    (App1 (ExprConstructor _ _) _) -> pure e
-    (App2 (ExprConstructor _ _) _ _) -> pure e
-    (App3 (ExprConstructor _ _) _ _ _) -> pure e
-    (App4 (ExprConstructor _ _) _ _ _ _) -> pure e
-    x -> throw . RuntimeException $ "Tried to apply something that isn't a lambda: " <> tshow x
+    _ | Just _ <- isConstructorApp evalFunc -> do
+      evalArg <- eval arg
+      pure $ ExprApplication evalFunc evalArg
+    x -> throw . RuntimeException $ "Tried to apply something that isn't a function: " <> tshow x
 
 eval (ExprCase scrutinee alts) = do
   evalScrutinee <- eval scrutinee
@@ -143,6 +149,10 @@ eval (ExprCase scrutinee alts) = do
 
 eval x = error $ "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms: " <> show x
 
+isConstructorApp :: Expr -> Maybe Tag
+isConstructorApp (ExprConstructor tag _) = Just tag
+isConstructorApp (ExprApplication f _) = isConstructorApp f
+isConstructorApp _ = Nothing
 
 evalBinIntOp :: Name -> Expr -> Expr -> State Env Expr
 evalBinIntOp op a b = do
@@ -154,7 +164,7 @@ evalBinIntOp op a b = do
       Name "-" -> (-)
       Name "*" -> (*)
       Name "/" -> div
-      x -> throw . RuntimeException $ "Unknown binary integer operation: " <> unName x
+      x -> throw . RuntimeException $ "Unknown binary Integer operation: " <> unName x
   case (evalA, evalB) of
     (ExprInt x, ExprInt y) -> pure . ExprInt $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
@@ -169,9 +179,21 @@ evalBinDoubleOp op a b = do
       Name "-." -> (-)
       Name "*." -> (*)
       Name "/." -> (/)
-      x -> throw . RuntimeException $ "Unknown binary double operation: " <> unName x
+      x -> throw . RuntimeException $ "Unknown binary Double operation: " <> unName x
   case (evalA, evalB) of
     (ExprDouble x, ExprDouble y) -> pure . ExprDouble $ x `primOp` y
+    (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
+
+evalBinStringOp :: Name -> Expr -> Expr -> State Env Expr
+evalBinStringOp op a b = do
+  evalA <- eval a
+  evalB <- eval b
+  let
+    primOp = case op of
+      Name "<>" -> (<>)
+      x -> throw . RuntimeException $ "Unknown binary String operation: " <> unName x
+  case (evalA, evalB) of
+    (ExprString x, ExprString y) -> pure . ExprString $ x `primOp` y
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
 
 evalBinBoolOp :: Name -> Expr -> Expr -> State Env Expr
@@ -182,7 +204,7 @@ evalBinBoolOp op a b = do
     primOp = case op of
       Name "&&" -> (&&)
       Name "||" -> (||)
-      x -> throw . RuntimeException $ "Unknown binary bool operation: " <> unName x
+      x -> throw . RuntimeException $ "Unknown binary Bool operation: " <> unName x
   case (evalA, evalB) of
     (ExprConstructor (Tag x) (Arity 0), ExprConstructor (Tag y) (Arity 0)) -> pure $ ExprConstructor (Tag (tshow $ toBool x `primOp` toBool y)) (Arity 0)
     (x, y) -> throw . RuntimeException $ "Invalid arguments to (" <> unName op <> "): " <> tshow x <> ", " <> tshow y
@@ -203,7 +225,7 @@ evalBinCompOp op a b = do
       Name "<=" -> (<=)
       Name ">"  -> (>)
       Name ">=" -> (>=)
-      x -> throw . RuntimeException $ "Unknown comparison operation: " <> unName x
+      x -> throw . RuntimeException $ "Unknown binary comparison operation: " <> unName x
   case (evalA, evalB) of
     (ExprInt x, ExprInt y) -> pure $ ExprConstructor (Tag (tshow (x `primOp` y))) (Arity 0)
     (ExprDouble x, ExprDouble y) -> pure $ ExprConstructor (Tag (tshow (x `primOp` y))) (Arity 0)

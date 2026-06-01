@@ -33,8 +33,27 @@ testParserFail parser input =
 
 parserSpec :: Spec
 parserSpec = describe "parsing" $ do
-    it "parseNumber" $ do
+    it "parseInt" $ do
       testParser parseExprLiteral "42" (ExprInt 42)
+      testParser parseExprLiteral "0" (ExprInt 0)
+      testParser parseExprLiteral "99999999999999999999999" (ExprInt 99999999999999999999999)
+
+    it "parseDouble" $ do
+      testParser parseExprLiteral "3.14" (ExprDouble 3.14)
+      testParser parseExprLiteral "0.15" (ExprDouble 0.15)
+
+    -- negatives should act like Haskell's LexicalNegation extension is on
+    xit "parseNegativeInt" $ do
+      testParser parseExprLiteral "-42" (ExprInt (-42))
+
+    xit "parseNegativeDouble" $ do
+      testParser parseExprLiteral "-3.14" (ExprDouble (-3.14))
+      testParser parseExprLiteral "-0.15" (ExprDouble (-0.15))
+
+    it "parseString" $ do
+      testParser parseExprLiteral "\"hello\"" (ExprString "hello")
+      testParser parseExprLiteral "\"\"" (ExprString "")
+      testParser parseExprLiteral "\"你好\"" (ExprString "你好")
 
     it "parseExprVariable" $ do
       testParser parseExprVariable "myVar" (ExprVariable "myVar")
@@ -56,6 +75,10 @@ parserSpec = describe "parsing" $ do
       testParserFail parseName "of"
       testParserFail parseName "Pack"
 
+    it "parseExprParenthesized" $ do
+      testParser parseExpr "(42)" (ExprInt 42)
+      testParser parseExpr "((42))" (ExprInt 42)
+
     it "$" $ do
       testProgramParser parseProgram [r|
 main = negate $ negate 3
@@ -65,6 +88,12 @@ main = negate $ negate 3
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "True" (ExprConstructor "True" (-1))
       testParser parseExprConstructor "False" (ExprConstructor "False" (-1))
+
+    it "parseDataDeclaration" $ do
+      testParser parseDataDeclaration "data Bool = True 1 | False 1"
+        (DataDeclaration [("True", Arity 1), ("False", Arity 1)] (DataType "Bool"))
+      testParser parseDataDeclaration "data Maybe = Nothing 0 | Just 1"
+        (DataDeclaration [("Nothing", Arity 0), ("Just", Arity 1)] (DataType "Maybe"))
 
     it "parseDefinition" $ do
       testParser parseDefinition "x = 2" ("x", ExprInt 2)
@@ -80,6 +109,11 @@ main = negate $ negate 3
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))
       testParser parseExprLambda "\\x y -> x" (ExprLambda "x" (ExprLambda "y" (ExprVariable "x")))
+
+    it "operator precedence (* over +)" $ do
+      testParser parseExpr "1 + 2 * 3"
+        (ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))
+          (ExprApplication (ExprApplication (ExprVariable "*") (ExprInt 2)) (ExprInt 3)))
 
     it "parseProgram" $ do
       testProgramParser parseProgram [r|

@@ -1,2 +1,2 @@
--- IGNORE
+-- EXPECT hello world
 main = "hello" <> " " <> "world"

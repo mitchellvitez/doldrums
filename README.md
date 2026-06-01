@@ -6,9 +6,11 @@
 
 ## About
 
-Doldrums is a small, purely functional programming language with an emphasis on ease of top-to-bottom understanding. I've been meaning to play with a language like this ever since making [Pixll](https://github.com/mitchellvitez/raspi-lights). This is a great way for me to learn. It's probably not very useful for anything in practice.
+Doldrums is a small, purely functional programming language with an emphasis on ease of top-to-bottom understanding. It's like a tiny Haskell. I've been meaning to play with a language like this ever since making [Pixll](https://github.com/mitchellvitez/raspi-lights). This is a great way for me to learn. It's probably not very useful for anything in practice.
 
-The compiler is written in Haskell. Use `cabal run doldrums -- test.dol` to run an example program, or `cabal test` to see what programs are currently working.
+The compiler is written in Haskell. Use `cabal run doldrums -- tour.dol` to run an example program, or `cabal test` to see what programs are currently working.
+
+There are many examples of working programs in `test/expect/*.dol` (and broken ones in `test/broken/*.dol`).
 
 ### Structure
 
@@ -27,8 +29,8 @@ Doldrums is purely functional, which means that all values are immutable. It's a
 ```
 
 ```
-/* Block comments
-   look like this */
+{- Block comments
+   look like this -}
 ```
 
 ### Writing a program

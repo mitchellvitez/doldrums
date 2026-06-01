@@ -1,0 +1,56 @@
+-- doldrums tour
+-- run with: cabal run doldrums -- tour.dol
+
+{- Block comments work too!
+
+   Doldrums is a small, purely functional programming language
+   with an emphasis on ease of top-to-bottom understanding.
+   It's like a tiny Haskell.
+
+-}
+
+-- algebraic datatypes
+-- uppercase constructors with an arity (number of arguments)
+
+data List = Nil 0 | Cons 2
+
+-- `case` expressions deconstruct values by pattern matching
+length list =
+  case list of
+    Nil -> 0
+    Cons x xs -> 1 + length xs
+
+-- `if condition thenClause elseClause` is like a `case` on `Bool`
+-- `$` has the lowest precedence, eliminating excess parentheses
+fib n = if (n == 0) 0 $
+        if (n == 1) 1 $
+        fib (n - 1) + fib (n - 2)
+
+fac n =
+  if (n == 0) 1 $ n * fac (n - 1)
+
+-- `let`...`in` to name variables
+greeting =
+  let
+    h = "Hello"
+    w = "world"
+  in h <> ", " <> w
+
+-- `\args -> body` is an anonymous (lambda) function
+-- `compose f g = \x -> f (g x)`
+shout = compose (\s -> s <> "!") (\s -> s <> "!")
+
+-- `show` converts values to string
+-- `<>` concatenates strings
+
+-- other operators:
+-- +, -, *, /, +., -., *., /., ==, !=,
+-- <, >, <=, >=, &&, ||, ~, !, $
+
+main =
+  shout greeting <> "\n" <>
+  -- "fib(3) = " <> show (fib 3) <> "\n" <>
+  -- "fac(6) = " <> show (fac 6) <> "\n" <>
+  "6 * 7 = " <> show (6 * 7) <> "\n" <>
+  "3.0 +. 4.0 = " <> show (3.0 +. 4.0) <> "\n" <>
+  "length (Cons 1 (Cons 2 Nil)) = " <> show (length (Cons 1 (Cons 2 Nil)))
