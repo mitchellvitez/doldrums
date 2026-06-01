@@ -22,9 +22,10 @@ length list =
 
 -- `if condition thenClause elseClause` is like a `case` on `Bool`
 -- `$` has the lowest precedence, eliminating excess parentheses
-fib n = if (n == 0) 0 $
-        if (n == 1) 1 $
-        fib (n - 1) + fib (n - 2)
+fib n =
+  if (n == 0) 0 $
+  if (n == 1) 1 $
+  fib (n - 1) + fib (n - 2)
 
 fac n =
   if (n == 0) 1 $ n * fac (n - 1)
@@ -49,8 +50,8 @@ shout = compose (\s -> s <> "!") (\s -> s <> "!")
 
 main =
   shout greeting <> "\n" <>
-  -- "fib(3) = " <> show (fib 3) <> "\n" <>
-  -- "fac(6) = " <> show (fac 6) <> "\n" <>
+  "fib(8) = " <> show (fib 8) <> "\n" <>
+  "fac(6) = " <> show (fac 6) <> "\n" <>
   "6 * 7 = " <> show (6 * 7) <> "\n" <>
   "3.0 +. 4.0 = " <> show (3.0 +. 4.0) <> "\n" <>
   "length (Cons 1 (Cons 2 Nil)) = " <> show (length (Cons 1 (Cons 2 Nil)))
