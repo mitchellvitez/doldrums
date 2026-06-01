@@ -71,18 +71,12 @@ labelFunctionAndExprs (Function annot name args body) = do
   pure $ Function annot name args labeledBody
 
 labelExpr :: Expr -> State LabelState (AnnotatedExpr Integer)
-labelExpr (ExprInt x) = do
+labelExpr (ExprLiteral x) = do
   n <- getNext
-  pure $ AnnExprInt n x
-labelExpr e@(ExprString x) = do
-  n <- getNext
-  pure $ AnnExprString n x
+  pure $ AnnExprLiteral n x
 labelExpr e@(ExprConstructor tag arity) = do
   n <- getNext
   pure $ AnnExprConstructor n tag arity
-labelExpr e@(ExprDouble x) = do
-  n <- getNext
-  pure $ AnnExprDouble n x
 labelExpr e@(ExprVariable var) = do
   (_, env) <- get
   case Map.lookup var env of
@@ -108,9 +102,9 @@ labelExpr (ExprLet name binding body) = do
 labelExpr (ExprCase scrutinee alts) = do
   n <- getNext
   labeledScrutinee <- labelExpr scrutinee
-  labeledAlts <- forM alts $ \(Alternative n vars expr) -> do
+  labeledAlts <- forM alts $ \(Alternative pat expr) -> do
     labeledExpr <- labelExpr expr
-    pure $ Alternative n vars labeledExpr
+    pure $ Alternative pat labeledExpr
   pure $ AnnExprCase n labeledScrutinee labeledAlts
 labelExpr _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
@@ -134,9 +128,9 @@ escapeQuotes = T.concatMap escape
     escape c    = T.singleton c
 
 exprToGraphviz :: Set Name -> AnnotatedExpr Integer -> Text
-exprToGraphviz _ (AnnExprInt n x) = node n $ tshow x
-exprToGraphviz _ (AnnExprString n s) = node n $ escapeQuotes $ tshow s
-exprToGraphviz _ (AnnExprDouble n d) = node n $ tshow d
+exprToGraphviz _ (AnnExprLiteral n (LiteralInt l)) = node n $ tshow l
+exprToGraphviz _ (AnnExprLiteral n (LiteralString s)) = node n $ escapeQuotes $ tshow s
+exprToGraphviz _ (AnnExprLiteral n (LiteralFloat d)) = node n $ tshow d
 exprToGraphviz _ (AnnExprConstructor n (Tag t) a) =
   node n t
 exprToGraphviz functionNames (AnnExprVariable n v) =
@@ -171,7 +165,7 @@ exprToGraphviz functionNames (AnnExprCase n expr alts) = fold
   ]
   <> fold (Prelude.map toNodes alts)
   where
-    toNodes (Alternative _n _names alt) = fold
+    toNodes (Alternative _pattern alt) = fold
       [ exprToGraphviz functionNames alt
       , annotation alt `pointsTo` n
       ]

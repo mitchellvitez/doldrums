@@ -32,10 +32,8 @@ data EvalState = EvalState
 
 -- | evaluated form of Expr
 data Value
-  = ValInt Integer
-  | ValString Text
-  | ValDouble Double
-  -- | data contstructor, partially applied unless Arity is 0
+  = ValLiteral Literal
+  -- | data constructor, partially applied unless Arity is 0
   | ValConstructor Tag Arity
   -- | function closure (i.e. a lambda), Name is the bound argument, Expr is the body
   | ValClosure Name Expr Env
@@ -62,9 +60,7 @@ tshow :: Show a => a -> Text
 tshow = T.pack . show
 
 instance Show Value where
-  show (ValInt n) = show n
-  show (ValString s) = show s
-  show (ValDouble d) = show d
+  show (ValLiteral l) = show l
   show (ValConstructor tag _) = show tag
   show (ValClosure arg _ _) = "<function arg=" <> T.unpack (unName arg) <> ">"
   show (ValApply _ t) = "<thunk id=" <> show t <> ">"
@@ -142,9 +138,7 @@ withEnv newEnv action = do
 
 -- | evaluate an Expr to weak head normal form. this is as far as `force` goes
 whnf :: Expr -> State EvalState Value
-whnf (ExprInt n) = pure $ ValInt n
-whnf (ExprString s) = pure $ ValString s
-whnf (ExprDouble d) = pure $ ValDouble d
+whnf (ExprLiteral l) = pure $ ValLiteral l
 whnf (ExprConstructor tag arity) = pure $ ValConstructor tag arity
 whnf (ExprLambda name body) = do
   -- capture the current env in the closure
@@ -211,18 +205,39 @@ whnf (ExprCase scrutinee alts) = do
   case unApply scrutVal [] of
     Right (tag, arity, argThunks) -> do
       let
-        Alternative _ argNames altBody =
-          fromMaybe (throw $ RuntimeException $ "Non-exhaustive patterns for tag: " <> unTag tag) $
-            find (\(Alternative altTag _ _) -> altTag == tag) alts
+        matchingAlt = find (\(Alternative pat _) -> case pat of
+          PatternConstructor altTag _ -> altTag == tag
+          _ -> False) alts
+        Alternative (PatternConstructor _ argPats) altBody =
+          fromMaybe (throw $ RuntimeException $ "Non-exhaustive patterns for tag: " <> unTag tag) $ matchingAlt
       when (length argThunks /= unArity arity) $
         throw $ RuntimeException $ "Constructor not fully applied: " <> unTag tag
-      when (length argNames /= length argThunks) $
+      when (length argPats /= length argThunks) $
         throw $ RuntimeException $ "Pattern arity mismatch for constructor: " <> unTag tag
+      let argNames = concatMap patternNames argPats
       -- bind pattern variables to the constructor's argument thunks
       currentEnv <- gets env
       let patternEnv = foldr (\(n, t) e -> Map.insert n t e) currentEnv (zip argNames argThunks)
-      withEnv patternEnv (whnf altBody)
-    Left err -> throw $ RuntimeException err
+      withEnv patternEnv $ whnf altBody
+    Left _ -> do
+      let
+        matchingAlt = find (\(Alternative pat _) -> case pat of
+          PatternLiteral patLit -> case scrutVal of
+            ValLiteral valLit -> patLit == valLit
+            _ -> False
+          PatternVar _ -> True
+          PatternWildcard -> True
+          _ -> False) alts
+      case matchingAlt of
+        Nothing -> throw $ RuntimeException "Non-exhaustive patterns"
+        Just (Alternative pat altBody) -> do
+          currentEnv <- gets env
+          patternEnv <- case pat of
+            PatternVar n -> do
+              tid <- newThunkInCurrentEnv scrutinee
+              pure $ Map.insert n tid currentEnv
+            _ -> pure currentEnv
+          withEnv patternEnv $ whnf altBody
 -- the above should be exhaustive
 whnf x = error $ "Failed pattern match exhaustiveness: " <> show x
 
@@ -255,7 +270,8 @@ intBinOp op a b = do
   valA <- whnf a
   valB <- whnf b
   case (valA, valB) of
-    (ValInt rawA, ValInt rawB) -> pure . ValInt $ rawA `op` rawB
+    (ValLiteral (LiteralInt rawA), ValLiteral (LiteralInt rawB)) ->
+      pure . ValLiteral . LiteralInt $ rawA `op` rawB
     _ -> throw $ RuntimeException "Type error in binary Integer operation"
 
 doubleBinOp :: (Double -> Double -> Double) -> Expr -> Expr -> State EvalState Value
@@ -263,24 +279,17 @@ doubleBinOp op a b = do
   valA <- whnf a
   valB <- whnf b
   case (valA, valB) of
-    (ValDouble rawA, ValDouble rawB) -> pure . ValDouble $ rawA `op` rawB
+    (ValLiteral (LiteralFloat rawA), ValLiteral (LiteralFloat rawB)) ->
+      pure . ValLiteral . LiteralFloat $ rawA `op` rawB
     _ -> throw $ RuntimeException "Type error in binary Double operation"
-
-cmpBinOp :: (Integer -> Integer -> Bool) -> Expr -> Expr -> State EvalState Value
-cmpBinOp op a b = do
-  valA <- whnf a
-  valB <- whnf b
-  case (valA, valB) of
-    (ValInt rawA, ValInt rawB) ->
-      pure . (\rawBool -> ValConstructor (Tag $ tshow rawBool) $ Arity 0) $ rawA `op` rawB
-    _ -> throw $ RuntimeException "Type error in binary comparison operation"
 
 strBinOp :: Expr -> Expr -> State EvalState Value
 strBinOp a b = do
   valA <- whnf a
   valB <- whnf b
   case (valA, valB) of
-    (ValString rawA, ValString rawB) -> pure . ValString $ rawA <> rawB
+    (ValLiteral (LiteralString rawA), ValLiteral (LiteralString rawB)) ->
+      pure . ValLiteral . LiteralString $ rawA <> rawB
     _ -> throw $ RuntimeException "Type error in string concatenation"
 
 comparePrim :: Expr -> Expr -> State EvalState Value
@@ -288,13 +297,13 @@ comparePrim a b = do
   valA <- whnf a
   valB <- whnf b
   case (valA, valB) of
-    (ValInt rawA, ValInt rawB) -> do
+    (ValLiteral (LiteralInt rawA), ValLiteral (LiteralInt rawB)) -> do
       let result = compare rawA rawB
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
-    (ValDouble rawA, ValDouble rawB) -> do
+    (ValLiteral (LiteralFloat rawA), ValLiteral (LiteralFloat rawB)) -> do
       let result = compare rawA rawB
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
-    (ValString rawA, ValString rawB) -> do
+    (ValLiteral (LiteralString rawA), ValLiteral (LiteralString rawB)) -> do
       let result = compare rawA rawB
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
     _ -> throw $ RuntimeException "Invalid argument to compare"
@@ -303,8 +312,8 @@ unaryNeg :: Expr -> State EvalState Value
 unaryNeg a = do
   valA <- whnf a
   case valA of
-    ValInt rawA -> pure . ValInt $ negate rawA
-    ValDouble rawA -> pure . ValDouble $ negate rawA
+    ValLiteral (LiteralInt rawA) -> pure . ValLiteral . LiteralInt $ negate rawA
+    ValLiteral (LiteralFloat rawA) -> pure . ValLiteral . LiteralFloat $ negate rawA
     _ -> throw $ RuntimeException "Invalid argument to (~)"
 
 unaryNot :: Expr -> State EvalState Value
@@ -319,19 +328,12 @@ showPrim :: Expr -> State EvalState Value
 showPrim a = do
   val <- whnf a
   str <- unpackValue val
-  pure $ ValString str
-
-deepForce :: Value -> State EvalState ()
-deepForce (ValApply v t) = do
-  innerVal <- force t
-  deepForce innerVal
-  deepForce v
-deepForce _ = pure ()
+  pure . ValLiteral $ LiteralString str
 
 unpackValue :: Value -> State EvalState Text
-unpackValue (ValInt n) = pure $ tshow n
-unpackValue (ValString s) = pure s
-unpackValue (ValDouble d) = pure $ tshow d
+unpackValue (ValLiteral (LiteralInt n)) = pure $ tshow n
+unpackValue (ValLiteral (LiteralString s)) = pure s
+unpackValue (ValLiteral (LiteralFloat f)) = pure $ tshow f
 unpackValue (ValConstructor tag (Arity 0)) = pure $ unTag tag
 unpackValue (ValConstructor tag _) = pure $ "<partially applied " <> unTag tag <> ">"
 unpackValue (ValClosure _ _ _) = pure "<function>"

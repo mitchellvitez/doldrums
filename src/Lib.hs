@@ -63,10 +63,10 @@ runBase programText strat isDebug = do
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
           let program = fixAst (prelude <> unnormalizedBadAritiesProgram)
-          -- let programWithoutPrelude = fixAst unnormalizedBadAritiesProgram
+          let programWithoutPrelude = fixAst unnormalizedBadAritiesProgram
 
-          debug isDebug "AST" . print $ const () <$> program -- WithoutPrelude
-          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> program -- WithoutPrelude
+          debug isDebug "AST" . print $ const () <$> programWithoutPrelude
+          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> programWithoutPrelude
 
           putStrLn "got to just before typechecking"
           (types, state) <- typeInference program programText

@@ -33,10 +33,10 @@ putTextLn :: Text -> IO ()
 putTextLn = putStrLn . Text.unpack
 
 data Type
-  = Int
-  | Double
-  | String
-  | Tagged DataType
+  = TypeInt
+  | TypeDouble
+  | TypeString
+  | TypeTagged DataType
   | Type :-> Type
   | TypeVariable Name
   deriving (Eq, Show, Generic)
@@ -86,10 +86,10 @@ instance Types TypeEnv where
 
 instance Types Type where
   freeTypeVariable (TypeVariable name) = Set.singleton name
-  freeTypeVariable Int = Set.empty
-  freeTypeVariable String = Set.empty
-  freeTypeVariable Double = Set.empty
-  freeTypeVariable (Tagged t) = Set.empty
+  freeTypeVariable TypeInt = Set.empty
+  freeTypeVariable TypeString = Set.empty
+  freeTypeVariable TypeDouble = Set.empty
+  freeTypeVariable (TypeTagged t) = Set.empty
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
@@ -147,10 +147,10 @@ unify sourcePos (a1 :-> b1) (a2 :-> b2) = do
   pure $ subs1 `combineSubstitutions` subs2
 unify sourcePos (TypeVariable u) t = varBind sourcePos u t
 unify sourcePos t (TypeVariable u) = varBind sourcePos u t
-unify _ Int Int = pure emptySubstitution
-unify _ String String = pure emptySubstitution
-unify _ Double Double = pure emptySubstitution
-unify sourcePos (Tagged (DataType a)) (Tagged (DataType b)) =
+unify _ TypeInt TypeInt = pure emptySubstitution
+unify _ TypeString TypeString = pure emptySubstitution
+unify _ TypeDouble TypeDouble = pure emptySubstitution
+unify sourcePos (TypeTagged (DataType a)) (TypeTagged (DataType b)) =
   if a == b
   then pure emptySubstitution
   else throwTypeCheckingException sourcePos a b
@@ -176,9 +176,12 @@ varBind sourcePos u t
   | otherwise = pure $ Map.singleton u t
 
 typeCheckExpr :: TypeEnv -> AnnotatedExpr SourcePos -> TypeInstantiation (Substitution, Type)
-typeCheckExpr _ (AnnExprInt _ _) = pure (emptySubstitution, Int)
-typeCheckExpr _ (AnnExprString _ _) = pure (emptySubstitution, String)
-typeCheckExpr _ (AnnExprDouble _ _) = pure (emptySubstitution, Double)
+typeCheckExpr _ (AnnExprLiteral _ (LiteralInt _)) =
+  pure (emptySubstitution, TypeInt)
+typeCheckExpr _ (AnnExprLiteral _ (LiteralString _)) =
+  pure (emptySubstitution, TypeString)
+typeCheckExpr _ (AnnExprLiteral _ (LiteralFloat _)) =
+  pure (emptySubstitution, TypeDouble)
 typeCheckExpr _ (AnnExprConstructor _ _ arity) = do
   ty <- type_ $ unArity arity
   pure (emptySubstitution, ty)
@@ -230,9 +233,9 @@ typeCheckExpr oldEnv (AnnExprLet sourcePos name binding expr2) = do
       pure (subs1 `combineSubstitutions` subs2, type2)
 typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
   let toNestedLambdas :: CaseAlternative SourcePos -> (Int, AnnotatedExpr SourcePos)
-      toNestedLambdas (Alternative tag args body) =
-        ( length args
-        , foldr (\name expr -> AnnExprLambda sourcePos name expr) body args
+      toNestedLambdas (Alternative pattern body) =
+        ( length $ patternNames pattern
+        , foldr (\name expr -> AnnExprLambda sourcePos name expr) body $ patternNames pattern
         )
   let removeArgsFromType :: Int -> Type -> Type
       removeArgsFromType 0 t = t
@@ -278,7 +281,7 @@ typeInference program programText = do
     `catch` typecheckingFailureHandler programText
   where
     initialEnvironment =
-      Map.insert (Name "show") (Scheme [Name "a"] (TypeVariable (Name "a") :-> String)) $
+      Map.insert (Name "show") (Scheme [Name "a"] (TypeVariable (Name "a") :-> TypeString)) $
       Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $
       Map.toList primitiveTypes <> initialFunctionTypes program 1
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
@@ -293,38 +296,38 @@ typeInference program programText = do
     functionType :: Int -> Arity -> Maybe DataType -> Type
     functionType n (Arity 0) mType = case mType of
       Nothing -> TypeVariable . Name $ "f" <> tshow n <> "arg0"
-      Just dataTy -> Tagged dataTy
+      Just dataTy -> TypeTagged dataTy
     functionType n (Arity numArgs) mType = do
       (TypeVariable . Name $ "f" <> tshow n <> "arg" <> tshow numArgs) :-> (functionType n (Arity $ numArgs - 1) mType)
 
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
-  [ (Name "+", Int :-> Int :-> Int )
-  , (Name "+.", Double :-> Double :-> Double )
-  , (Name "==", tvar "prim7" :-> tvar "prim8" :-> Tagged (DataType "Bool"))
+  [ (Name "+", TypeInt :-> TypeInt :-> TypeInt )
+  , (Name "+.", TypeDouble :-> TypeDouble :-> TypeDouble )
+  , (Name "==", tvar "prim7" :-> tvar "prim8" :-> TypeTagged (DataType "Bool"))
   , (Name "-", tvar "prim9" :-> tvar "prim9" :-> tvar "prim9")
-  , (Name "||", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
-  , (Name "<", tvar "prim10" :-> tvar "prim10" :-> Tagged (DataType "Bool"))
+  , (Name "||", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
+  , (Name "<", tvar "prim10" :-> tvar "prim10" :-> TypeTagged (DataType "Bool"))
   , (Name "/", tvar "prim11" :-> tvar "prim11" :-> tvar "prim11")
   , (Name "const", tvar "prim13" :-> tvar "prim14" :-> tvar "prim13")
   , (Name "const2", tvar "prim15" :-> tvar "prim16" :-> tvar "prim16")
   , (Name "~", tvar "prim17" :-> tvar "prim17")
-  , (Name "*", Int :-> Int :-> Int)
-  , (Name "*.", Double :-> Double :-> Double)
+  , (Name "*", TypeInt :-> TypeInt :-> TypeInt)
+  , (Name "*.", TypeDouble :-> TypeDouble :-> TypeDouble)
   , (Name "negate", tvar "prim18" :-> tvar "prim18")
   , (Name "twice", (tvar "prim19" :-> tvar "prim19") :-> tvar "prim19")
   , (Name "id", tvar "prim20" :-> tvar "prim20")
-  , (Name ">", tvar "prim21" :-> tvar "prim21" :-> Tagged (DataType "Bool"))
+  , (Name ">", tvar "prim21" :-> tvar "prim21" :-> TypeTagged (DataType "Bool"))
   , (Name "compose", (tvar "prim23" :-> tvar "prim24") :-> (tvar "prim22" :-> tvar "prim23") :-> tvar "prim22" :-> tvar "prim24")
-  , (Name "<=", tvar "prim27" :-> tvar "prim27" :-> Tagged (DataType "Bool"))
-  , (Name "!=", tvar "prim28" :-> tvar "prim28" :-> Tagged (DataType "Bool"))
-  , (Name ">=", tvar "prim29" :-> tvar "prim29" :-> Tagged (DataType "Bool"))
-  , (Name "&&", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
-  , (Name "and", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
-  , (Name "not", Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
-  , (Name "or", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
-  , (Name "xor", Tagged (DataType "Bool") :-> Tagged (DataType "Bool") :-> Tagged (DataType "Bool"))
-  , (Name "<>", String :-> String :-> String)
-  , (Name "compare", tvar "prim30" :-> tvar "prim30" :-> Tagged (DataType "Ordering"))
+  , (Name "<=", tvar "prim27" :-> tvar "prim27" :-> TypeTagged (DataType "Bool"))
+  , (Name "!=", tvar "prim28" :-> tvar "prim28" :-> TypeTagged (DataType "Bool"))
+  , (Name ">=", tvar "prim29" :-> tvar "prim29" :-> TypeTagged (DataType "Bool"))
+  , (Name "&&", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
+  , (Name "and", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
+  , (Name "not", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
+  , (Name "or", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
+  , (Name "xor", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
+  , (Name "<>", TypeString :-> TypeString :-> TypeString)
+  , (Name "compare", tvar "prim30" :-> tvar "prim30" :-> TypeTagged (DataType "Ordering"))
   ]
   where tvar = TypeVariable . Name

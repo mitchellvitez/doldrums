@@ -49,9 +49,7 @@ fixFunctionArities datas f@(Function _ _ _ body) =
 
 fixExprArities :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
 fixExprArities _ e@(AnnExprVariable _ _) = e
-fixExprArities _ e@(AnnExprInt _ _) = e
-fixExprArities _ e@(AnnExprString _ _) = e
-fixExprArities _ e@(AnnExprDouble _ _) = e
+fixExprArities _ e@(AnnExprLiteral _ _) = e
 fixExprArities datas (AnnExprApplication a f x) = AnnExprApplication a (fixExprArities datas f) (fixExprArities datas x)
 fixExprArities datas (AnnExprLet a name binding body) =
   AnnExprLet a name (fixExprArities datas binding) (fixExprArities datas body)
@@ -100,14 +98,14 @@ desugarRules = \case
   -- a && b  ~>  case a of { True -> b; False -> False }
   BinOp ann a b "&&" ->
     Just $ AnnExprCase ann a
-      [ Alternative (Tag "True") [] b
-      , Alternative (Tag "False") [] $ exprFalse ann
+      [ Alternative (PatternConstructor (Tag "True") []) b
+      , Alternative (PatternConstructor (Tag "False") []) $ exprFalse ann
       ]
   -- a || b  ~>  case a of { False -> b; True -> True }
   BinOp ann a b "||" ->
     Just $ AnnExprCase ann a
-      [ Alternative (Tag "False") [] b
-      , Alternative (Tag "True") [] $ exprTrue ann
+      [ Alternative (PatternConstructor (Tag "False") []) b
+      , Alternative (PatternConstructor (Tag "True") []) $ exprTrue ann
       ]
 
   -- a == b  ~>  case compare a b of { LT -> False; EQ -> True; GT -> False }
@@ -134,9 +132,9 @@ pattern BinOp ann a b op <-
 desugarComparisonOperator :: a -> AnnotatedExpr a -> AnnotatedExpr a -> (Bool, Bool, Bool) -> Maybe (AnnotatedExpr a)
 desugarComparisonOperator ann a b (lt, eq, gt) =
   Just $ AnnExprCase ann (AnnExprApplication ann (AnnExprApplication ann (AnnExprVariable ann "compare") a) b)
-    [ Alternative (Tag "LT") [] $ (toExprBool lt) ann
-    , Alternative (Tag "EQ") [] $ (toExprBool eq) ann
-    , Alternative (Tag "GT") [] $ (toExprBool gt) ann
+    [ Alternative (PatternConstructor (Tag "LT") []) $ (toExprBool lt) ann
+    , Alternative (PatternConstructor (Tag "EQ") []) $ (toExprBool eq) ann
+    , Alternative (PatternConstructor (Tag "GT") []) $ (toExprBool gt) ann
     ]
 
 toExprBool False = exprFalse
@@ -160,11 +158,9 @@ desugarExpr expr =
 
 mapExpr :: (AnnotatedExpr a -> AnnotatedExpr a) -> AnnotatedExpr a -> AnnotatedExpr a
 mapExpr f (AnnExprVariable a n) = AnnExprVariable a n
-mapExpr f (AnnExprInt a n) = AnnExprInt a n
-mapExpr f (AnnExprString a s) = AnnExprString a s
-mapExpr f (AnnExprDouble a d) = AnnExprDouble a d
+mapExpr f (AnnExprLiteral a l) = AnnExprLiteral a l
 mapExpr f (AnnExprConstructor a tag arity) = AnnExprConstructor a tag arity
 mapExpr f (AnnExprApplication a e1 e2) = AnnExprApplication a (f e1) (f e2)
 mapExpr f (AnnExprLet a n b body) = AnnExprLet a n (f b) (f body)
 mapExpr f (AnnExprLambda a n e) = AnnExprLambda a n (f e)
-mapExpr f (AnnExprCase a e alts) = AnnExprCase a (f e) (map (\(Alternative tag names body) -> Alternative tag names (f body)) alts)
+mapExpr f (AnnExprCase a e alts) = AnnExprCase a (f e) (map (\(Alternative pat body) -> Alternative pat (f body)) alts)

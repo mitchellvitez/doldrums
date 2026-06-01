@@ -34,26 +34,26 @@ testParserFail parser input =
 parserSpec :: Spec
 parserSpec = describe "parsing" $ do
     it "parseInt" $ do
-      testParser parseExprLiteral "42" (ExprInt 42)
-      testParser parseExprLiteral "0" (ExprInt 0)
-      testParser parseExprLiteral "99999999999999999999999" (ExprInt 99999999999999999999999)
+      testParser parseExprLiteral "42" (ExprLiteral (LiteralInt 42))
+      testParser parseExprLiteral "0" (ExprLiteral (LiteralInt 0))
+      testParser parseExprLiteral "99999999999999999999999" (ExprLiteral (LiteralInt 99999999999999999999999))
 
     it "parseDouble" $ do
-      testParser parseExprLiteral "3.14" (ExprDouble 3.14)
-      testParser parseExprLiteral "0.15" (ExprDouble 0.15)
+      testParser parseExprLiteral "3.14" (ExprLiteral (LiteralFloat 3.14))
+      testParser parseExprLiteral "0.15" (ExprLiteral (LiteralFloat 0.15))
 
     -- negatives should act like Haskell's LexicalNegation extension is on
     xit "parseNegativeInt" $ do
-      testParser parseExprLiteral "-42" (ExprInt (-42))
+      testParser parseExprLiteral "-42" (ExprLiteral (LiteralInt (-42)))
 
     xit "parseNegativeDouble" $ do
-      testParser parseExprLiteral "-3.14" (ExprDouble (-3.14))
-      testParser parseExprLiteral "-0.15" (ExprDouble (-0.15))
+      testParser parseExprLiteral "-3.14" (ExprLiteral (LiteralFloat (-3.14)))
+      testParser parseExprLiteral "-0.15" (ExprLiteral (LiteralFloat (-0.15)))
 
     it "parseString" $ do
-      testParser parseExprLiteral "\"hello\"" (ExprString "hello")
-      testParser parseExprLiteral "\"\"" (ExprString "")
-      testParser parseExprLiteral "\"你好\"" (ExprString "你好")
+      testParser parseExprLiteral "\"hello\"" (ExprLiteral (LiteralString "hello"))
+      testParser parseExprLiteral "\"\"" (ExprLiteral (LiteralString ""))
+      testParser parseExprLiteral "\"你好\"" (ExprLiteral (LiteralString "你好"))
 
     it "parseExprVariable" $ do
       testParser parseExprVariable "myVar" (ExprVariable "myVar")
@@ -76,14 +76,14 @@ parserSpec = describe "parsing" $ do
       testParserFail parseName "Pack"
 
     it "parseExprParenthesized" $ do
-      testParser parseExpr "(42)" (ExprInt 42)
-      testParser parseExpr "((42))" (ExprInt 42)
+      testParser parseExpr "(42)" (ExprLiteral (LiteralInt 42))
+      testParser parseExpr "((42))" (ExprLiteral (LiteralInt 42))
 
     it "$" $ do
       testProgramParser parseProgram [r|
 main = negate $ negate 3
 |]
-        (Program [Function () "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprInt 3)))] [])
+        (Program [Function () "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprLiteral (LiteralInt 3))))] [])
 
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "True" (ExprConstructor "True" (-1))
@@ -96,15 +96,15 @@ main = negate $ negate 3
         (DataDeclaration [("Nothing", Arity 0), ("Just", Arity 1)] (DataType "Maybe"))
 
     it "parseDefinition" $ do
-      testParser parseDefinition "x = 2" ("x", ExprInt 2)
+      testParser parseDefinition "x = 2" ("x", ExprLiteral (LiteralInt 2))
 
     it "parseExprCase" $ do
-      testParser parseExprCase "case maybe of\n  Nothing -> 0\n  Just x -> x" (ExprCase (ExprVariable "maybe") [Alternative "Nothing" [] (ExprInt 0), Alternative "Just" ["x"] (ExprVariable "x")])
+      testParser parseExprCase "case maybe of\n  Nothing -> 0\n  Just x -> x" (ExprCase (ExprVariable "maybe") [Alternative (PatternConstructor "Nothing" []) (ExprLiteral (LiteralInt 0)), Alternative (PatternConstructor "Just" [PatternVar "x"]) (ExprVariable "x")])
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let\n  x = 2\nin x" (ExprLet "x" (ExprInt 2) (ExprVariable "x"))
-      testParser parseExprLet "let\n  x = 2\n  y = 3\nin x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
-      testParser parseExprLet "let\n  x = 2\nin\nlet\n  y = 3\nin x" (ExprLet "x" (ExprInt 2) (ExprLet "y" (ExprInt 3) (ExprVariable "x")))
+      testParser parseExprLet "let\n  x = 2\nin x" (ExprLet "x" (ExprLiteral (LiteralInt 2)) (ExprVariable "x"))
+      testParser parseExprLet "let\n  x = 2\n  y = 3\nin x" (ExprLet "x" (ExprLiteral (LiteralInt 2)) (ExprLet "y" (ExprLiteral (LiteralInt 3)) (ExprVariable "x")))
+      testParser parseExprLet "let\n  x = 2\nin\nlet\n  y = 3\nin x" (ExprLet "x" (ExprLiteral (LiteralInt 2)) (ExprLet "y" (ExprLiteral (LiteralInt 3)) (ExprVariable "x")))
 
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))
@@ -112,15 +112,15 @@ main = negate $ negate 3
 
     it "operator precedence (* over +)" $ do
       testParser parseExpr "1 + 2 * 3"
-        (ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))
-          (ExprApplication (ExprApplication (ExprVariable "*") (ExprInt 2)) (ExprInt 3)))
+        (ExprApplication (ExprApplication (ExprVariable "+") (ExprLiteral (LiteralInt 1)))
+          (ExprApplication (ExprApplication (ExprVariable "*") (ExprLiteral (LiteralInt 2))) (ExprLiteral (LiteralInt 3))))
 
     it "parseProgram" $ do
       testProgramParser parseProgram [r|
 id x = x
 main = id 2
 |]
-        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprInt 2))] [])
+        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprLiteral (LiteralInt 2)))] [])
 
     it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
@@ -130,12 +130,12 @@ main = id 2
 main = double 21
 double x = x + x
 |]
-        (Program [ Function () "main" [] (ExprApplication (ExprVariable "double") (ExprInt 21))
+        (Program [ Function () "main" [] (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 21)))
         , Function () "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
         ] [])
 
     it "num plus string - parses" $ do
-      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function () "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprInt 1))) (ExprString "hello"))] [])
+      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function () "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprLiteral (LiteralInt 1)))) (ExprLiteral (LiteralString "hello")))] [])
 
     it "parses a program with many functions" $ do
       testProgramParser parseProgram [r|
@@ -144,4 +144,4 @@ f p = (id p) * p
 double n = n * 2
 main = f (double 4)
 |]
-        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprInt 2)), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprInt 4)))] [])
+        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [])
