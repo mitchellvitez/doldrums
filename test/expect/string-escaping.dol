@@ -1,2 +1,3 @@
 -- EXPECT Hello "world"!
+main : String
 main = "Hello \"world\"!"

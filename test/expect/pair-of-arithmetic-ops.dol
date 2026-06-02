@@ -5,6 +5,7 @@ four = ((1 + 6 - 2) * 4) / 5
 
 data Pair a b = Pair a b
 
+first : Pair a b -> a
 first p =
   case p of
     Pair a b -> a
@@ -13,6 +14,7 @@ second p =
   case p of
     Pair a b -> b
 
+f : Int -> Int -> Pair Int Int
 f x y = first $ Pair (id x) (second $ Pair 3 y)
 
 main =

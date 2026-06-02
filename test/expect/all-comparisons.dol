@@ -1,4 +1,5 @@
 -- EXPECT True
+main : Bool
 main =
   1 == 1 &&
   1 != 2 &&

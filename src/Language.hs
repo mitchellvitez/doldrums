@@ -21,18 +21,19 @@ import Text.Megaparsec (SourcePos)
 data Program a = Program
   { functions :: [Function a]
   , dataDeclarations :: [DataDeclaration]
+  , typeSignatures :: [(Name, TypeHint)]
   }
   deriving Eq
 deriving instance Show (Program SourcePos)
 
 instance Show (Program ()) where
-  show (Program funcs decls) = "data declarations: " <> show decls <> "\n" <> intercalate "\n" (map show funcs)
+  show (Program funcs decls sigs) = "data declarations: " <> show decls <> "\n" <> intercalate "\n" (map show funcs) <> "\n" <> show sigs
 
 instance Semigroup (Program a) where
-  Program f1 d1 <> Program f2 d2 = Program (f1 <> f2) (d1 <> d2)
+  Program f1 d1 s1 <> Program f2 d2 s2 = Program (f1 <> f2) (d1 <> d2) (s1 <> s2)
 
 instance Functor Program where
-  fmap f (Program funcs datas) = Program (fmap f <$> funcs) datas
+  fmap f (Program funcs datas sigs) = Program (fmap f <$> funcs) datas sigs
 
 data DataDeclaration = DataDeclaration
   -- ... = [Nothing :: Maybe a, Just :: a -> Maybe a]
@@ -44,10 +45,22 @@ data DataDeclaration = DataDeclaration
   }
   deriving (Eq, Show)
 
+-- arguments to data constructors
 data TypeRef
   = TypeRefVar Name
   | TypeRefConstructor DataType
   | TypeRefApp DataType [TypeRef]
+  deriving (Eq, Show)
+
+-- a type the user wrote down
+data TypeHint
+  = TypeHintInt
+  | TypeHintDouble
+  | TypeHintString
+  | TypeHintVar Name
+  | TypeHintConstructor DataType
+  | TypeHintApp DataType [TypeHint]
+  | TypeHintArrow TypeHint TypeHint
   deriving (Eq, Show)
 
 -- name, list of arguments, body

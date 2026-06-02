@@ -1,11 +1,8 @@
+-- useful types
+
 data Bool = True | False
 
 data Ordering = LT | EQ | GT
-
-if cond then else =
-  case cond of
-    True -> then
-    False -> else
 
 data Unit = Unit
 
@@ -15,26 +12,80 @@ data Either a b = Left a | Right b
 
 data List a = Nil | Cons a (List a)
 
+-- standalone type signatures for built-ins
+(+) : Int -> Int -> Int
+(+.) : Double -> Double -> Double
+(*) : Int -> Int -> Int
+(*.) : Double -> Double -> Double
+(-) : Int -> Int -> Int
+(-.) : Double -> Double -> Double
+(/) : Int -> Int -> Int
+(/.) : Double -> Double -> Double
+(~) : a -> a
+(!) : Bool -> Bool
+(==) : a -> a -> Bool
+(!=) : a -> a -> Bool
+(<) : a -> a -> Bool
+(>) : a -> a -> Bool
+(<=) : a -> a -> Bool
+(>=) : a -> a -> Bool
+(&&) : Bool -> Bool -> Bool
+(||) : Bool -> Bool -> Bool
+(<>) : String -> String -> String
+($) : (a -> b) -> a -> b
+compare : a -> a -> Ordering
+show : a -> String
+
+if : Bool -> a -> a -> a
+if cond then else =
+  case cond of
+    True -> then
+    False -> else
+
+not : Bool -> Bool
+not x = if x False True
+
+and : Bool -> Bool -> Bool
+and x y = if x y False
+
+or : Bool -> Bool -> Bool
+or x y = if x True y
+
+xor : Bool -> Bool -> Bool
+xor x y = if x (not y) y
+
+negate : a -> a
+negate x = ~x
+
+id : a -> a
+id x = x
+
+const : a -> b -> a
+const x y = x
+
+const2 : a -> b -> b
+const2 x y = y
+
+flip : (a -> b -> c) -> b -> a -> c
+flip f x y = f y x
+
+sCombinator : (a -> b -> c) -> (a -> b) -> a -> c
+sCombinator f g x = f x (g x)
+
+compose : (b -> c) -> (a -> b) -> a -> c
+compose f g = \x -> f (g x)
+
+twice : (a -> a) -> a -> a
+twice f = compose f f
+
+length : List a -> Int
 length list =
   case list of
     Nil -> 0
     Cons x xs -> 1 + length xs
 
+map : (a -> b) -> List a -> List b
 map f list =
   case list of
     Nil -> Nil
     Cons x xs -> Cons (f x) (map f xs)
-
-id x = x
-const x y = x
-const2 x y = y
-flip f x y = f y x
-sCombinator f g x = f x (g x)
-compose f g = \x -> f (g x)
-twice f = compose f f
-negate x = ~x
-
-not x = if x False True
-and x y = if x y False
-or x y = if x True y
-xor x y = if x (not y) y

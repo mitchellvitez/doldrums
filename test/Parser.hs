@@ -24,7 +24,7 @@ testProgramParser :: Parser (Program SourcePos) -> Text -> Program () -> Expecta
 testProgramParser parser input output =
   (ignoreAnnotations <$> parse parser "" input) `shouldBe` Right output
   where
-    ignoreAnnotations (Program funcs datas) = Program funcs' datas
+    ignoreAnnotations (Program funcs datas sigs) = Program funcs' datas sigs
       where funcs' = Prelude.map (\(Function annot name args expr) -> Function () name args (const () <$> expr)) funcs
 
 testParserFail :: (Show a, Eq a) => Parser a -> Text -> Expectation
@@ -83,7 +83,7 @@ parserSpec = describe "parsing" $ do
       testProgramParser parseProgram [r|
 main = negate $ negate 3
 |]
-        (Program [Function () "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprLiteral (LiteralInt 3))))] [])
+        (Program [Function () "main" [] (ExprApplication (ExprVariable "negate") (ExprApplication (ExprVariable "negate") (ExprLiteral (LiteralInt 3))))] [] [])
 
     it "parseExprConstructor" $ do
       testParser parseExprConstructor "True" (ExprConstructor "True" (-1))
@@ -122,7 +122,7 @@ main = negate $ negate 3
 id x = x
 main = id 2
 |]
-        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprLiteral (LiteralInt 2)))] [])
+        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprLiteral (LiteralInt 2)))] [] [])
 
     it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
@@ -134,10 +134,10 @@ double x = x + x
 |]
         (Program [ Function () "main" [] (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 21)))
         , Function () "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
-        ] [])
+        ] [] [])
 
     it "num plus string - parses" $ do
-      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function () "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprLiteral (LiteralInt 1)))) (ExprLiteral (LiteralString "hello")))] [])
+      testProgramParser parseProgram "main = 1 + \"hello\"" (Program [Function () "main" [] ((ExprApplication (ExprApplication (ExprVariable "+") (ExprLiteral (LiteralInt 1)))) (ExprLiteral (LiteralString "hello")))] [] [])
 
     it "parses a program with many functions" $ do
       testProgramParser parseProgram [r|
@@ -146,4 +146,4 @@ f p = (id p) * p
 double n = n * 2
 main = f (double 4)
 |]
-        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [])
+        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [] [])

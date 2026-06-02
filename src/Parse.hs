@@ -31,18 +31,22 @@ lexeme = L.lexeme spaceConsumer
 lexemeNewline :: Parser a -> Parser a
 lexemeNewline = L.lexeme spaceConsumerNewline
 
-data TopLevel a = Decl DataDeclaration | Func (Function a)
+data TopLevel a
+  = Decl DataDeclaration
+  | Func (Function a)
+  | Sig (Name, TypeHint)
 
 parseProgram :: Parser (Program SourcePos)
 parseProgram = do
   topLevels <- some parseTopLevel
-  pure $ topLevelToProgram (Program [] []) topLevels
+  pure $ topLevelToProgram (Program [] [] []) topLevels
 
 topLevelToProgram :: Program SourcePos -> [TopLevel SourcePos] -> Program SourcePos
-topLevelToProgram Program{..} [] = Program (reverse functions) (reverse dataDeclarations)
+topLevelToProgram Program{..} [] = Program (reverse functions) (reverse dataDeclarations) (reverse typeSignatures)
 topLevelToProgram Program{..} (topLevel:rest) = case topLevel of
   Decl (d@(DataDeclaration _ _ _)) -> topLevelToProgram Program{..} { dataDeclarations = d : dataDeclarations } rest
   Func (f@(Function _ _ _ _)) -> topLevelToProgram Program{..} { functions = f : functions } rest
+  Sig s -> topLevelToProgram Program{..} { typeSignatures = s : typeSignatures } rest
 
 parseTopLevel :: Parser (TopLevel SourcePos)
 parseTopLevel =
@@ -50,6 +54,7 @@ parseTopLevel =
 
 parseEitherTopLevel :: Parser (TopLevel SourcePos)
 parseEitherTopLevel =
+  try (Sig <$> parseSignature) <|>
   try (Decl <$> parseDataDeclaration) <|>
       (Func <$> parseFunction)
 
@@ -293,6 +298,54 @@ parseNameChar =
   digitChar  <|>
   char '_'   <|>
   char '\''
+
+parseSignature :: Parser (Name, TypeHint)
+parseSignature = do
+  name <- parseSignatureName
+  lexeme $ char ':'
+  sig <- parseTypeHint
+  pure (name, sig)
+
+parseSignatureName :: Parser Name
+parseSignatureName =
+  try parseOperatorInParens <|> parseName
+
+parseOperatorInParens :: Parser Name
+parseOperatorInParens = do
+  lexeme $ char '('
+  name <- Name . T.pack <$> some (oneOf ("~!*/.-+=<>&|$" :: String))
+  lexeme $ char ')'
+  pure name
+
+parseTypeHint :: Parser TypeHint
+parseTypeHint= do
+  types <- parseTypeHintSingle `sepBy1` try (lexeme $ string "->")
+  pure $ foldr1 TypeHintArrow types
+
+parseTypeHintSingle :: Parser TypeHint
+parseTypeHintSingle = do
+  first <- parseTypeHintAtomic
+  rest <- many parseTypeHintAtomic
+  case (first, rest) of
+    (TypeHintConstructor dt, args) -> pure $ TypeHintApp dt args
+    (TypeHintVar _, []) -> pure first
+    (TypeHintVar _, _:_) -> fail "Type variable applied to arguments"
+    _ -> pure first
+
+parseTypeHintAtomic :: Parser TypeHint
+parseTypeHintAtomic =
+  typeHintLiteral "Int" TypeHintInt <|>
+  typeHintLiteral "Double" TypeHintDouble <|>
+  typeHintLiteral "Float" TypeHintDouble <|>
+  typeHintLiteral "String" TypeHintString <|>
+  try (TypeHintVar <$> parseName) <|>
+  try (TypeHintConstructor . DataType . unTag <$> parseTag) <|>
+  between (lexeme $ char '(') (lexeme $ char ')') parseTypeHint
+
+typeHintLiteral :: Text -> TypeHint -> Parser TypeHint
+typeHintLiteral name hint = do
+  try . lexeme $ string name <* notFollowedBy parseNameChar
+  pure hint
 
 keywords :: Set Text
 keywords = Set.fromList ["let", "in", "case", "of", "data"]

@@ -110,6 +110,8 @@ data TypeCheckingException = TypeCheckingException SourcePos Text
 instance Exception TypeCheckingException
 
 data TypeInstantiationEnv = TypeInstantiationEnv
+  { signatureMap :: Map Name Scheme
+  }
 
 data TypeInstantiationState = TypeInstantiationState
   { typeInstantiationSupply :: Int
@@ -121,11 +123,11 @@ data TypeInstantiationState = TypeInstantiationState
 type TypeInstantiation a =
   ExceptT Text (ReaderT TypeInstantiationEnv (StateT TypeInstantiationState IO)) a
 
-runTypeInstantiation :: TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
-runTypeInstantiation t = do
-  runStateT (runReaderT (runExceptT t) initialTypeInstantiationEnv) initialTypeInstantiationState
+runTypeInstantiation :: Map Name Scheme -> TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
+runTypeInstantiation sigs t = do
+  runStateT (runReaderT (runExceptT t) env) initialTypeInstantiationState
   where
-    initialTypeInstantiationEnv = TypeInstantiationEnv
+    env = TypeInstantiationEnv { signatureMap = sigs }
     initialTypeInstantiationState = TypeInstantiationState
       { typeInstantiationSupply = 0
       , typeInstantiationSubstitution = Map.empty
@@ -214,18 +216,25 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   subs3 <- unify sourcePos (apply subs2 type1) (type2 :-> typeVar)
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
 typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
+  sigMap <- asks signatureMap
   newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] var)) $ map fst bindings
   let env = oldEnv <> TypeEnv (Map.fromList newVars)
   ty <- newTypeVar "a"
-  foldM (foldStep env) (emptySubstitution, ty) bindings
+  foldM (foldStep sigMap env) (emptySubstitution, ty) bindings
   where
-    foldStep env (subs0, type0) (name, expr1) = do
+    foldStep sigMap env (subs0, type0) (name, expr1) = do
       (subs1, type1) <- typeCheckExpr env expr1
-      let TypeEnv env1 = remove env name
-          generalizedType = generalize (apply subs1 env) type1
+      subsSig <- case Map.lookup name sigMap of
+        Just sigScheme -> do
+          sigType <- instantiate sigScheme
+          unify sourcePos (apply subs1 type1) sigType
+        Nothing -> pure emptySubstitution
+      let subs1' = subsSig `combineSubstitutions` subs1
+          TypeEnv env1 = remove env name
+          generalizedType = generalize (apply subs1' env) (apply subs1' type1)
           env2 = TypeEnv $ Map.insert name generalizedType env1
-      (subs2, type2) <- typeCheckExpr (apply subs1 env2) expr2
-      pure (subs1 `combineSubstitutions` subs2, type2)
+      (subs2, type2) <- typeCheckExpr (apply subs1' env2) expr2
+      pure (subs2 `combineSubstitutions` subs1', type2)
 typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
   let toNestedLambdas :: CaseAlternative SourcePos -> (Int, AnnotatedExpr SourcePos)
       toNestedLambdas (Alternative pattern body) =
@@ -271,26 +280,47 @@ typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = d
   putTextLn msg
   exitFailure
 
+typeHintToType :: TypeHint -> Type
+typeHintToType = \case
+  TypeHintInt -> TypeInt
+  TypeHintDouble -> TypeDouble
+  TypeHintString -> TypeString
+  TypeHintVar n -> TypeVariable n
+  TypeHintConstructor dt -> TypeTagged dt
+  TypeHintApp dt _ -> TypeTagged dt
+  TypeHintArrow a b -> typeHintToType a :-> typeHintToType b
+
+typeHintFreeVars :: TypeHint -> [Name]
+typeHintFreeVars = \case
+  TypeHintVar n -> [n]
+  TypeHintArrow a b -> typeHintFreeVars a <> typeHintFreeVars b
+  TypeHintApp _ args -> concatMap typeHintFreeVars args
+  _ -> []
+
 typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInference program programText = do
   -- convert to single-expression form (all top-level functions become lets in main) then typecheck
-  (runTypeInstantiation . infer initialEnvironment $ singleExprForm program)
+  (runTypeInstantiation sigSchemes . infer initialEnvironment $ singleExprForm program)
     `catch` typecheckingFailureHandler programText
   where
+    sigSchemes = Map.fromList
+      [ (name, Scheme (typeHintFreeVars st) (typeHintToType st))
+      | (name, st) <- typeSignatures program
+      ]
     initialEnvironment :: Map Name Scheme
     initialEnvironment =
-      Map.insert (Name "show") (Scheme [Name "a"] (TypeVariable (Name "a") :-> TypeString)) $
-      basicTypeSignatures <> Map.fromList (initialFunctionTypes program 1)
+      sigSchemes <>
+      Map.fromList (initialFunctionTypes program 1)
 
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Scheme)]
-    initialFunctionTypes (Program [] []) _ = []
-    initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
-      (name, Scheme [] $ functionType n (Arity $ length args) Nothing) : initialFunctionTypes (Program restFuncs datas) (n+1)
-    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas)) n =
-      initialFunctionTypes (Program funcs restDatas) n
-    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas)) n =
+    initialFunctionTypes (Program [] [] _) _ = []
+    initialFunctionTypes (Program (Function _ name args body : restFuncs) datas sigs) n =
+      (name, Scheme [] $ functionType n (Arity $ length args) Nothing) : initialFunctionTypes (Program restFuncs datas sigs) (n+1)
+    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas) sigs) n =
+      initialFunctionTypes (Program funcs restDatas sigs) n
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas) sigs) n =
       (Name $ unTag x, constructorScheme typeParams typeRefs dataTy)
-      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas)) (n+1)
+      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas) sigs) (n+1)
 
     constructorScheme :: [Name] -> [TypeRef] -> DataType -> Scheme
     constructorScheme typeParams typeRefs dataTy =
@@ -308,61 +338,3 @@ typeInference program programText = do
       Just dataTy -> TypeTagged dataTy
     functionType n (Arity numArgs) mType = do
       (TypeVariable . Name $ "f" <> tshow n <> "arg" <> tshow numArgs) :-> (functionType n (Arity $ numArgs - 1) mType)
-
--- TODO: instead of this, add top-level type signatures language feature
--- like `if : Bool -> a -> a -> a` and check function types against them
--- list them all in Prelude.dol
-basicTypeSignatures :: Map Name Scheme
-basicTypeSignatures =
-  let var = TypeVariable . Name
-      a = var "a"
-      b = var "b"
-      c = var "c"
-      dt = TypeTagged . DataType
-      sig name forall_ signature = (Name name, Scheme (map Name forall_) signature)
-  in Map.fromList
-  -- if :: forall a. Bool -> a -> a -> a
-  [ sig "if" ["a"] $ dt "Bool" :-> a :-> a :-> a
-  -- (+) :: Int -> Int -> Int
-  , sig "+" [] $ TypeInt :-> TypeInt :-> TypeInt
-  -- etc.
-  , sig "+." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
-  , sig "*" [] $ TypeInt :-> TypeInt :-> TypeInt
-  , sig "*." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
-  , sig "-" ["a"] $ TypeInt :-> TypeInt :-> TypeInt
-  , sig "-." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
-  , sig "/" [] $ TypeInt :-> TypeInt :-> TypeInt
-  , sig "/." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
-  , sig "~" ["a"] $ a :-> a
-  , sig "negate" ["a"] $ a :-> a
-
-  , sig "compare" ["a"] $ a :-> a :-> dt "Ordering"
-  , sig "==" ["a"] $ a :-> a :-> dt "Bool"
-  , sig "<" ["a"] $ a :-> a :-> dt "Bool"
-  , sig ">" ["a"] $ a :-> a :-> dt "Bool"
-  , sig "<=" ["a"] $ a :-> a :-> dt "Bool"
-  , sig "!=" ["a"] $ a :-> a :-> dt "Bool"
-  , sig ">=" ["a"] $ a :-> a :-> dt "Bool"
-  , sig "!" [] $ dt "Bool" :-> dt "Bool"
-
-  , sig "||" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
-  , sig "or" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
-  , sig "&&" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
-  , sig "and" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
-  , sig "not" [] $ dt "Bool" :-> dt "Bool"
-  , sig "xor" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
-
-  , sig "$" ["a", "b"] $ (a :-> b) :-> a :-> b
-  , sig "compose" ["a", "b", "c"] $ (b :-> c) :-> (a :-> b) :-> a :-> c
-  , sig "id" ["a"] $ a :-> a
-  , sig "flip" ["a", "b", "c"] $ (a :-> b :-> c) :-> b :-> a :-> c
-  , sig "const" ["a"] $ a :-> a :-> a
-  , sig "const2" ["a"] $ a :-> a :-> a
-  , sig "twice" ["a"] $ a :-> a :-> a
-  , sig "sCombinator" ["a", "b", "c"] $ (a :-> b :-> c) :-> (a :-> b) :-> a :-> c
-
-  , sig "<>" [] $ TypeString :-> TypeString :-> TypeString
-
-  , sig "length" ["a"] $ dt "List" :-> TypeInt
-  , sig "map" ["a", "b"] $ (a :-> b) :-> dt "List" :-> dt "List"
-  ]

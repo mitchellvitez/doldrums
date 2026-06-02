@@ -20,7 +20,7 @@ fixAst =
 
 -- convert Program to a single Expr (`let topLevelExpr = ... in main`)
 singleExprForm :: Program a -> AnnotatedExpr a
-singleExprForm program@(Program funcs _) =
+singleExprForm program@(Program funcs _ _) =
   foldl' toSingle (getMainExpr program) (filter (\(Function _ name _ _) -> name /= Name "main") funcs)
 
   where
@@ -32,16 +32,16 @@ singleExprForm program@(Program funcs _) =
       foldr (AnnExprLambda annot) body args
 
     getMainExpr :: Program a -> AnnotatedExpr a
-    getMainExpr (Program [] datas) = error "Couldn't find main"
-    getMainExpr (Program (Function _ name _ body : restFuncs) datas) = case name of
+    getMainExpr (Program [] _ _) = error "Couldn't find main"
+    getMainExpr (Program (Function _ name _ body : restFuncs) datas sigs) = case name of
       Name "main" -> body
-      _ -> getMainExpr $ Program restFuncs datas
+      _ -> getMainExpr $ Program restFuncs datas sigs
 
 
 -- FIX ARITIES --
 
 fixArities :: Program a -> Program a
-fixArities (Program funcs datas) = Program (map (fixFunctionArities datas) funcs) datas
+fixArities (Program funcs datas sigs) = Program (map (fixFunctionArities datas) funcs) datas sigs
 
 fixFunctionArities :: [DataDeclaration] -> Function a -> Function a
 fixFunctionArities datas f@(Function _ _ _ body) =
@@ -72,13 +72,13 @@ checkUniqueness :: Program a -> Program a
 checkUniqueness = checkUniqueConstructors . checkUniqueFunctions
 
 checkUniqueFunctions :: Program a -> Program a
-checkUniqueFunctions program@(Program funcs datas) =
+checkUniqueFunctions program@(Program funcs datas _) =
   case findDuplicate Set.empty $ map name funcs of
     Nothing -> program
     Just (Name name) -> error $ "Duplicate function: " <> Text.unpack name
 
 checkUniqueConstructors :: Program a -> Program a
-checkUniqueConstructors program@(Program funcs datas) =
+checkUniqueConstructors program@(Program funcs datas _) =
   case findDuplicate Set.empty . map fst $ concatMap declarations datas of
     Nothing -> program
     Just (Tag tag) -> error $ "Duplicate constructor: " <> Text.unpack tag
@@ -144,8 +144,8 @@ exprFalse ann = AnnExprConstructor ann (Tag "False") (Arity 0)
 exprTrue ann = AnnExprConstructor ann (Tag "True") (Arity 0)
 
 desugarProgram :: Program a -> Program a
-desugarProgram (Program funcs decls) =
-  Program (map desugarFunction funcs) decls
+desugarProgram (Program funcs decls sigs) =
+  Program (map desugarFunction funcs) decls sigs
 
 desugarFunction :: Function a -> Function a
 desugarFunction f = f { body = desugarExpr $ body f }

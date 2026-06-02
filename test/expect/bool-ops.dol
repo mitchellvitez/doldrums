@@ -1,2 +1,3 @@
 -- EXPECT True
+main : Bool
 main = True && False || True

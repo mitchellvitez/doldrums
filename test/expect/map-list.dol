@@ -1,5 +1,7 @@
 -- EXPECT Cons 2 (Cons 3 (Cons 4 Nil))
 
+main : List Int
 main = map addOne (Cons 1 (Cons 2 (Cons 3 Nil)))
 
+addOne : Int -> Int
 addOne x = x + 1

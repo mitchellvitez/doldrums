@@ -48,13 +48,13 @@ getNext :: State LabelState Integer
 getNext = modify (\(n, env) -> (n+1, env)) >> fst <$> get
 
 labelProgram :: Program () -> State LabelState (Program Integer)
-labelProgram (Program funcs datas) = do
+labelProgram (Program funcs datas sigs) = do
   let functionNames = fmap name funcs
       zipped = zip functionNames $ repeat (-1)
   put (0, Map.fromList zipped)
   newFuncs <- mapM labelFunction funcs
   newFuncs' <- mapM labelFunctionAndExprs newFuncs
-  pure $ Program newFuncs' datas
+  pure $ Program newFuncs' datas sigs
 
 labelFunction :: Function () -> State LabelState (Function Integer)
 labelFunction (Function annot name args body) = do
@@ -111,7 +111,7 @@ labelExpr (ExprCase scrutinee alts) = do
 labelExpr _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
 programToGraphviz :: Program Integer -> Text
-programToGraphviz (Program funcs datas) =
+programToGraphviz (Program funcs datas _sigs) =
   fold $ functionToGraphviz (Set.fromList $ fmap name funcs) <$> funcs
 
 functionToGraphviz :: Set Name -> Function Integer -> Text
