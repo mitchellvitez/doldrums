@@ -55,7 +55,8 @@ fixExprArities datas (AnnExprLet a bindings body) =
   AnnExprLet a [(name, fixExprArities datas binding) | (name, binding) <- bindings] (fixExprArities datas body)
 fixExprArities datas (AnnExprConstructor a tag _) = AnnExprConstructor a tag $ lookupTag datas tag
 fixExprArities datas (AnnExprLambda a name expr) = AnnExprLambda a name (fixExprArities datas expr)
-fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) alters
+fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) $ map fixAlt alters
+  where fixAlt (Alternative pat body) = Alternative pat $ fixExprArities datas body
 
 lookupTag :: [DataDeclaration] -> Tag -> Arity
 lookupTag [] tag = error $ "Could not find constructor: " <> show tag

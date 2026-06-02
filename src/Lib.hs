@@ -63,10 +63,9 @@ runBase programText strat isDebug = do
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
           let program = fixAst (prelude <> unnormalizedBadAritiesProgram)
-          let programWithoutPrelude = fixAst unnormalizedBadAritiesProgram
 
-          debug isDebug "AST" . print $ const () <$> programWithoutPrelude
-          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> programWithoutPrelude
+          debug isDebug "AST" . print $ const () <$> program
+          debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> program
 
           (types, state) <- typeInference program programText
           debug isDebug "TYPE" $ do

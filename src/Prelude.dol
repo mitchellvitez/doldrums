@@ -13,6 +13,18 @@ data Maybe = Nothing 0 | Just 1
 
 data Either = Left 1 | Right 1
 
+data List = Nil 0 | Cons 2
+
+length list =
+  case list of
+    Nil -> 0
+    Cons x xs -> 1 + length xs
+
+map f list =
+  case list of
+    Nil -> Nil
+    Cons x xs -> Cons (f x) (map f xs)
+
 id x = x
 const x y = x
 const2 x y = y
