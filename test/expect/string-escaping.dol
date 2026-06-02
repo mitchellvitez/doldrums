@@ -1,0 +1,2 @@
+-- EXPECT Hello "world"!
+main = "Hello \"world\"!"

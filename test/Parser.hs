@@ -42,13 +42,13 @@ parserSpec = describe "parsing" $ do
       testParser parseExprLiteral "3.14" (ExprLiteral (LiteralFloat 3.14))
       testParser parseExprLiteral "0.15" (ExprLiteral (LiteralFloat 0.15))
 
-    -- negatives should act like Haskell's LexicalNegation extension is on
-    xit "parseNegativeInt" $ do
-      testParser parseExprLiteral "-42" (ExprLiteral (LiteralInt (-42)))
+    -- TODO: negatives should act like Haskell's LexicalNegation extension is on
+    -- xit "parseNegativeInt" $ do
+    --   testParser parseExprLiteral "~42" (ExprLiteral (LiteralInt (-42)))
 
-    xit "parseNegativeDouble" $ do
-      testParser parseExprLiteral "-3.14" (ExprLiteral (LiteralFloat (-3.14)))
-      testParser parseExprLiteral "-0.15" (ExprLiteral (LiteralFloat (-0.15)))
+    -- xit "parseNegativeDouble" $ do
+    --   testParser parseExprLiteral "-3.14" (ExprLiteral (LiteralFloat (-3.14)))
+    --   testParser parseExprLiteral "-0.15" (ExprLiteral (LiteralFloat (-0.15)))
 
     it "parseString" $ do
       testParser parseExprLiteral "\"hello\"" (ExprLiteral (LiteralString "hello"))
@@ -102,9 +102,11 @@ main = negate $ negate 3
       testParser parseExprCase "case maybe of\n  Nothing -> 0\n  Just x -> x" (ExprCase (ExprVariable "maybe") [Alternative (PatternConstructor "Nothing" []) (ExprLiteral (LiteralInt 0)), Alternative (PatternConstructor "Just" [PatternVar "x"]) (ExprVariable "x")])
 
     it "parseExprLet" $ do
-      testParser parseExprLet "let\n  x = 2\nin x" (ExprLet "x" (ExprLiteral (LiteralInt 2)) (ExprVariable "x"))
-      testParser parseExprLet "let\n  x = 2\n  y = 3\nin x" (ExprLet "x" (ExprLiteral (LiteralInt 2)) (ExprLet "y" (ExprLiteral (LiteralInt 3)) (ExprVariable "x")))
-      testParser parseExprLet "let\n  x = 2\nin\nlet\n  y = 3\nin x" (ExprLet "x" (ExprLiteral (LiteralInt 2)) (ExprLet "y" (ExprLiteral (LiteralInt 3)) (ExprVariable "x")))
+      testParser parseExprLet "let\n  x = 2\nin x" $ ExprLet [(Name "x", ExprLiteral (LiteralInt 2))] (ExprVariable "x")
+      -- multiple
+      testParser parseExprLet "let\n  x = 2\n  y = 3\nin x" $ ExprLet [(Name "x", ExprLiteral (LiteralInt 2)), (Name "y", ExprLiteral (LiteralInt 3))] (ExprVariable "x")
+      -- nested
+      testParser parseExprLet "let\n  x = 2\nin\nlet\n  y = 3\nin x" $ ExprLet [(Name "x", ExprLiteral (LiteralInt 2))] (ExprLet [(Name "y", ExprLiteral (LiteralInt 3))] (ExprVariable "x"))
 
     it "parseExprLambda" $ do
       testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))

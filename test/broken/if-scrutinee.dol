@@ -1,3 +1,2 @@
--- IGNORE
--- TODO: should be BROKEN, detect applying non-functions during compilation
+-- BROKEN
 main = if 42 1 2

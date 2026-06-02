@@ -94,11 +94,13 @@ labelExpr (ExprLambda name expr) = do
   n <- getNext
   labeledExpr <- labelExpr expr
   pure $ AnnExprLambda n name labeledExpr
-labelExpr (ExprLet name binding body) = do
+labelExpr (ExprLet bindings body) = do
+  labeledBindings <- forM bindings $ \(name, binding) -> do
+    labeledBinding <- labelExpr binding
+    pure (name, labeledBinding)
   n <- getNext
-  labeledBinding <- labelExpr binding
   labeledBody <- labelExpr body
-  pure $ AnnExprLet n name labeledBinding labeledBody
+  pure $ AnnExprLet n labeledBindings labeledBody
 labelExpr (ExprCase scrutinee alts) = do
   n <- getNext
   labeledScrutinee <- labelExpr scrutinee
@@ -142,16 +144,16 @@ exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   , exprToGraphviz functionNames x
   , annotation x `pointsTo` n
   ]
-exprToGraphviz functionNames (AnnExprLet n name binding body) = fold $
-  [ toGraphviz (unName name) binding
+exprToGraphviz functionNames (AnnExprLet a bindings body) = fold $
+  [ foldMap (uncurry toGraphviz) bindings
   , exprToGraphviz functionNames body
-  , annotation body `pointsTo` n
+  , annotation body `pointsTo` a
   ]
   where
     toGraphviz name binding = fold
-      [ node n $ "Let (" <> name <> ")"
+      [ node a $ "Let (" <> unName name <> ")"
       , exprToGraphviz functionNames binding
-      , annotation binding `pointsTo` n
+      , annotation binding `pointsTo` a
       ]
 exprToGraphviz functionNames (AnnExprLambda n name expr) = fold
   [ node n $ "Lam (" <> unName name <> ")"

@@ -25,7 +25,7 @@ singleExprForm program@(Program funcs _) =
 
   where
     toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
-    toSingle expr func = AnnExprLet (annotation expr) (name func) (toNestedLambdas func) expr
+    toSingle expr func = AnnExprLet (annotation expr) [(name func, toNestedLambdas func)] expr
 
     toNestedLambdas :: Function a -> AnnotatedExpr a
     toNestedLambdas (Function annot name args body) =
@@ -51,8 +51,8 @@ fixExprArities :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
 fixExprArities _ e@(AnnExprVariable _ _) = e
 fixExprArities _ e@(AnnExprLiteral _ _) = e
 fixExprArities datas (AnnExprApplication a f x) = AnnExprApplication a (fixExprArities datas f) (fixExprArities datas x)
-fixExprArities datas (AnnExprLet a name binding body) =
-  AnnExprLet a name (fixExprArities datas binding) (fixExprArities datas body)
+fixExprArities datas (AnnExprLet a bindings body) =
+  AnnExprLet a [(name, fixExprArities datas binding) | (name, binding) <- bindings] (fixExprArities datas body)
 fixExprArities datas (AnnExprConstructor a tag _) = AnnExprConstructor a tag $ lookupTag datas tag
 fixExprArities datas (AnnExprLambda a name expr) = AnnExprLambda a name (fixExprArities datas expr)
 fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) alters
@@ -161,6 +161,6 @@ mapExpr f (AnnExprVariable a n) = AnnExprVariable a n
 mapExpr f (AnnExprLiteral a l) = AnnExprLiteral a l
 mapExpr f (AnnExprConstructor a tag arity) = AnnExprConstructor a tag arity
 mapExpr f (AnnExprApplication a e1 e2) = AnnExprApplication a (f e1) (f e2)
-mapExpr f (AnnExprLet a n b body) = AnnExprLet a n (f b) (f body)
+mapExpr f (AnnExprLet a bindings body) = AnnExprLet a [(name, f binding) | (name, binding) <- bindings] (f body)
 mapExpr f (AnnExprLambda a n e) = AnnExprLambda a n (f e)
 mapExpr f (AnnExprCase a e alts) = AnnExprCase a (f e) (map (\(Alternative pat body) -> Alternative pat (f body)) alts)

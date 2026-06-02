@@ -149,14 +149,23 @@ whnf (ExprVariable name) = do
   case Map.lookup name currentEnv of
     Just tid -> force tid
     Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> tshow name
-whnf (ExprLet name binding body) = do
+whnf (ExprLet bindings body) = do
   s <- get
-  let tid = nextId s
-      extEnv = Map.insert name tid (env s)
+  let
+    -- to allow mutual recursion, write out all bindings as thunks
+    names = map fst bindings
+    exprs = map snd bindings
+    baseTid = unThunkId $ nextId s
+    tids = map ThunkId [baseTid .. baseTid + length bindings - 1]
+    recEnv = foldr (\(n, tid) e -> Map.insert n tid e) (env s) $ zip names tids
+    newHeap = foldr
+      (\(tid, expr) h -> IntMap.insert (unThunkId tid) (Thunk recEnv expr) h)
+      (heap s)
+      (zip tids exprs)
   put s
-    { heap = IntMap.insert (unThunkId tid) (Thunk extEnv binding) (heap s)
-    , nextId = ThunkId $ unThunkId tid + 1
-    , env = extEnv
+    { heap = newHeap
+    , nextId = ThunkId $ baseTid + length bindings
+    , env = recEnv
     }
   whnf body
 -- binary operations

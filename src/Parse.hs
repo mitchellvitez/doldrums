@@ -4,7 +4,6 @@ module Parse where
 
 import Language
 
-import Data.List as List (foldr)
 import Control.Monad.Combinators.Expr
 import Control.Monad (void)
 import Data.Text (Text)
@@ -185,7 +184,7 @@ parseExprLet = do
   lexeme $ string "in"
   spaceConsumerNewline
   body <- parseExpr
-  pure $ List.foldr (\(name, binding) -> ExprLet name binding) body definitions
+  pure $ ExprLet definitions body
 
 parseExprCase :: Parser Expr
 parseExprCase = do

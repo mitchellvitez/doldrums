@@ -217,8 +217,7 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   (subs2, type2) <- typeCheckExpr (apply subs1 env) expr2
   subs3 <- unify sourcePos (apply subs2 type1) (type2 :-> typeVar)
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
-typeCheckExpr oldEnv (AnnExprLet sourcePos name binding expr2) = do
-  let bindings = [(name, binding)]
+typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
   newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] var)) $ map fst bindings
   let env = oldEnv <> TypeEnv (Map.fromList newVars)
   ty <- newTypeVar "a"
@@ -274,7 +273,7 @@ typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = d
   pure $ (Left "typechecking failed", TypeInstantiationState 0 Map.empty)
   exitFailure -- comment this out to treat typechecking as a warning
 
-typeInference :: Program SourcePos -> Text ->  IO (Either Text Type, TypeInstantiationState)
+typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInference program programText = do
   -- convert to single-expression form (all top-level functions become lets in main) then typecheck
   (runTypeInstantiation . infer initialEnvironment $ singleExprForm program)
@@ -300,6 +299,9 @@ typeInference program programText = do
     functionType n (Arity numArgs) mType = do
       (TypeVariable . Name $ "f" <> tshow n <> "arg" <> tshow numArgs) :-> (functionType n (Arity $ numArgs - 1) mType)
 
+-- TODO: add top-level type signatures like `if : Bool -> a -> a -> a` to build specifications like
+-- `TypeSignature (Name "if") (TypeTagged (DataType "Bool") :-> tvar "prim31" :-> tvar "prim31" :-> tvar "prim31")
+-- and check function types against them. list them all in Prelude.dol
 primitiveTypes :: Map Name Type
 primitiveTypes = Map.fromList
   [ (Name "+", TypeInt :-> TypeInt :-> TypeInt )
@@ -329,5 +331,6 @@ primitiveTypes = Map.fromList
   , (Name "xor", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
   , (Name "<>", TypeString :-> TypeString :-> TypeString)
   , (Name "compare", tvar "prim30" :-> tvar "prim30" :-> TypeTagged (DataType "Ordering"))
+  , (Name "if", TypeTagged (DataType "Bool") :-> tvar "prim31" :-> tvar "prim31" :-> tvar "prim31")
   ]
   where tvar = TypeVariable . Name

@@ -68,9 +68,7 @@ runBase programText strat isDebug = do
           debug isDebug "AST" . print $ const () <$> programWithoutPrelude
           debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> programWithoutPrelude
 
-          putStrLn "got to just before typechecking"
           (types, state) <- typeInference program programText
-          putStrLn "got to after typechecking"
           debug isDebug "TYPE" $ do
             let toText (Right x) = pack $ show x
                 toText (Left x) = x
