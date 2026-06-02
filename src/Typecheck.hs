@@ -13,7 +13,7 @@ where
 import Language
 import FixAst (singleExprForm)
 
-import Control.Monad (foldM, forM)
+import Control.Monad (foldM, forM, when)
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -49,6 +49,9 @@ class Types a where
   apply :: Substitution -> a -> a
 
 -- used for finding type variable replacements / generalization
+-- `forall a. a -> String`
+-- is the same as
+-- `Scheme [Name "a"] (TypeVariable (Name "a") :-> TypeString)`
 data Scheme = Scheme [Name] Type
 
 instance Types Scheme where
@@ -182,26 +185,19 @@ typeCheckExpr _ (AnnExprLiteral _ (LiteralString _)) =
   pure (emptySubstitution, TypeString)
 typeCheckExpr _ (AnnExprLiteral _ (LiteralFloat _)) =
   pure (emptySubstitution, TypeDouble)
-typeCheckExpr _ (AnnExprConstructor _ _ arity) = do
-  ty <- type_ $ unArity arity
-  pure (emptySubstitution, ty)
-  where
-    type_ :: Int -> TypeInstantiation Type
-    type_ 0 = do
-      -- TODO: replace this with the constructor Type
-      typeVar <- newTypeVar "a"
-      pure typeVar
-    type_ n = do
-      typeVar <- newTypeVar "a"
-      recursedType <- type_ $ n - 1
-      pure $ typeVar :-> recursedType
+typeCheckExpr env@(TypeEnv envMap) (AnnExprConstructor sourcePos tag _arity) =
+  case Map.lookup (Name $ unTag tag) envMap of
+    Just scheme -> do
+      instantiatedType <- instantiate scheme
+      pure (emptySubstitution, instantiatedType)
+    Nothing -> do
+      ty <- newTypeVar "a"
+      pure (emptySubstitution, ty)
 typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
   case Map.lookup name env of
     Nothing -> do
       ty <- newTypeVar "a"
       pure (emptySubstitution, ty)
-      -- throw . TypeCheckingException sourcePos $
-      --   "Unbound variable: " <> name <> ". Maybe add it to `primitiveTypes`?"
     Just ty -> do
       instantiatedType <- instantiate ty
       pure (emptySubstitution, instantiatedType)
@@ -267,11 +263,13 @@ typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = d
     ]
   let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
   putStrLn $ line <> "v"
-  putTextLn $ Text.lines programText !! (unPos (sourceLine sourcePos) - 1)
+  let textLines = Text.lines programText
+      lineNum = unPos (sourceLine sourcePos) - 1
+  when (lineNum >= 0 && lineNum < length textLines) $
+    putTextLn $ textLines !! lineNum
   putStrLn $ line <> "^"
   putTextLn msg
-  pure $ (Left "typechecking failed", TypeInstantiationState 0 Map.empty)
-  exitFailure -- comment this out to treat typechecking as a warning
+  exitFailure
 
 typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInference program programText = do
@@ -279,18 +277,30 @@ typeInference program programText = do
   (runTypeInstantiation . infer initialEnvironment $ singleExprForm program)
     `catch` typecheckingFailureHandler programText
   where
+    initialEnvironment :: Map Name Scheme
     initialEnvironment =
       Map.insert (Name "show") (Scheme [Name "a"] (TypeVariable (Name "a") :-> TypeString)) $
-      Map.fromList $ map (\(name, ty) -> (name, Scheme [] ty)) $
-      Map.toList primitiveTypes <> initialFunctionTypes program 1
-    initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Type)]
+      basicTypeSignatures <> Map.fromList (initialFunctionTypes program 1)
+
+    initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Scheme)]
     initialFunctionTypes (Program [] []) _ = []
     initialFunctionTypes (Program (Function _ name args body : restFuncs) datas) n =
-      (name, functionType n (Arity $ length args) Nothing) : initialFunctionTypes (Program restFuncs datas) (n+1)
-    initialFunctionTypes (Program funcs (DataDeclaration [] dataTy : restDatas)) n =
+      (name, Scheme [] $ functionType n (Arity $ length args) Nothing) : initialFunctionTypes (Program restFuncs datas) (n+1)
+    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas)) n =
       initialFunctionTypes (Program funcs restDatas) n
-    initialFunctionTypes (Program funcs (DataDeclaration ((x, arity) : restDecls) dataTy : restDatas)) n =
-      (Name $ unTag x, functionType n arity (Just dataTy)) : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy : restDatas)) (n+1)
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas)) n =
+      (Name $ unTag x, constructorScheme typeParams typeRefs dataTy)
+      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas)) (n+1)
+
+    constructorScheme :: [Name] -> [TypeRef] -> DataType -> Scheme
+    constructorScheme typeParams typeRefs dataTy =
+      Scheme schemeVars $ foldr refToFn (TypeTagged dataTy) typeRefs
+      where
+        schemeVars = typeParams <> [n | TypeRefVar n <- typeRefs]
+        refToFn :: TypeRef -> Type -> Type
+        refToFn (TypeRefVar name) = (TypeVariable name :->)
+        refToFn (TypeRefConstructor dt) = (TypeTagged dt :->)
+        refToFn (TypeRefApp dt _) = (TypeTagged dt :->)
 
     functionType :: Int -> Arity -> Maybe DataType -> Type
     functionType n (Arity 0) mType = case mType of
@@ -299,38 +309,60 @@ typeInference program programText = do
     functionType n (Arity numArgs) mType = do
       (TypeVariable . Name $ "f" <> tshow n <> "arg" <> tshow numArgs) :-> (functionType n (Arity $ numArgs - 1) mType)
 
--- TODO: add top-level type signatures like `if : Bool -> a -> a -> a` to build specifications like
--- `TypeSignature (Name "if") (TypeTagged (DataType "Bool") :-> tvar "prim31" :-> tvar "prim31" :-> tvar "prim31")
--- and check function types against them. list them all in Prelude.dol
-primitiveTypes :: Map Name Type
-primitiveTypes = Map.fromList
-  [ (Name "+", TypeInt :-> TypeInt :-> TypeInt )
-  , (Name "+.", TypeDouble :-> TypeDouble :-> TypeDouble )
-  , (Name "==", tvar "prim7" :-> tvar "prim8" :-> TypeTagged (DataType "Bool"))
-  , (Name "-", tvar "prim9" :-> tvar "prim9" :-> tvar "prim9")
-  , (Name "||", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
-  , (Name "<", tvar "prim10" :-> tvar "prim10" :-> TypeTagged (DataType "Bool"))
-  , (Name "/", tvar "prim11" :-> tvar "prim11" :-> tvar "prim11")
-  , (Name "const", tvar "prim13" :-> tvar "prim14" :-> tvar "prim13")
-  , (Name "const2", tvar "prim15" :-> tvar "prim16" :-> tvar "prim16")
-  , (Name "~", tvar "prim17" :-> tvar "prim17")
-  , (Name "*", TypeInt :-> TypeInt :-> TypeInt)
-  , (Name "*.", TypeDouble :-> TypeDouble :-> TypeDouble)
-  , (Name "negate", tvar "prim18" :-> tvar "prim18")
-  , (Name "twice", (tvar "prim19" :-> tvar "prim19") :-> tvar "prim19")
-  , (Name "id", tvar "prim20" :-> tvar "prim20")
-  , (Name ">", tvar "prim21" :-> tvar "prim21" :-> TypeTagged (DataType "Bool"))
-  , (Name "compose", (tvar "prim23" :-> tvar "prim24") :-> (tvar "prim22" :-> tvar "prim23") :-> tvar "prim22" :-> tvar "prim24")
-  , (Name "<=", tvar "prim27" :-> tvar "prim27" :-> TypeTagged (DataType "Bool"))
-  , (Name "!=", tvar "prim28" :-> tvar "prim28" :-> TypeTagged (DataType "Bool"))
-  , (Name ">=", tvar "prim29" :-> tvar "prim29" :-> TypeTagged (DataType "Bool"))
-  , (Name "&&", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
-  , (Name "and", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
-  , (Name "not", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
-  , (Name "or", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
-  , (Name "xor", TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool") :-> TypeTagged (DataType "Bool"))
-  , (Name "<>", TypeString :-> TypeString :-> TypeString)
-  , (Name "compare", tvar "prim30" :-> tvar "prim30" :-> TypeTagged (DataType "Ordering"))
-  , (Name "if", TypeTagged (DataType "Bool") :-> tvar "prim31" :-> tvar "prim31" :-> tvar "prim31")
+-- TODO: instead of this, add top-level type signatures language feature
+-- like `if : Bool -> a -> a -> a` and check function types against them
+-- list them all in Prelude.dol
+basicTypeSignatures :: Map Name Scheme
+basicTypeSignatures =
+  let var = TypeVariable . Name
+      a = var "a"
+      b = var "b"
+      c = var "c"
+      dt = TypeTagged . DataType
+      sig name forall_ signature = (Name name, Scheme (map Name forall_) signature)
+  in Map.fromList
+  -- if :: forall a. Bool -> a -> a -> a
+  [ sig "if" ["a"] $ dt "Bool" :-> a :-> a :-> a
+  -- (+) :: Int -> Int -> Int
+  , sig "+" [] $ TypeInt :-> TypeInt :-> TypeInt
+  -- etc.
+  , sig "+." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
+  , sig "*" [] $ TypeInt :-> TypeInt :-> TypeInt
+  , sig "*." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
+  , sig "-" ["a"] $ TypeInt :-> TypeInt :-> TypeInt
+  , sig "-." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
+  , sig "/" [] $ TypeInt :-> TypeInt :-> TypeInt
+  , sig "/." [] $ TypeDouble :-> TypeDouble :-> TypeDouble
+  , sig "~" ["a"] $ a :-> a
+  , sig "negate" ["a"] $ a :-> a
+
+  , sig "compare" ["a"] $ a :-> a :-> dt "Ordering"
+  , sig "==" ["a"] $ a :-> a :-> dt "Bool"
+  , sig "<" ["a"] $ a :-> a :-> dt "Bool"
+  , sig ">" ["a"] $ a :-> a :-> dt "Bool"
+  , sig "<=" ["a"] $ a :-> a :-> dt "Bool"
+  , sig "!=" ["a"] $ a :-> a :-> dt "Bool"
+  , sig ">=" ["a"] $ a :-> a :-> dt "Bool"
+  , sig "!" [] $ dt "Bool" :-> dt "Bool"
+
+  , sig "||" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
+  , sig "or" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
+  , sig "&&" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
+  , sig "and" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
+  , sig "not" [] $ dt "Bool" :-> dt "Bool"
+  , sig "xor" [] $ dt "Bool" :-> dt "Bool" :-> dt "Bool"
+
+  , sig "$" ["a", "b"] $ (a :-> b) :-> a :-> b
+  , sig "compose" ["a", "b", "c"] $ (b :-> c) :-> (a :-> b) :-> a :-> c
+  , sig "id" ["a"] $ a :-> a
+  , sig "flip" ["a", "b", "c"] $ (a :-> b :-> c) :-> b :-> a :-> c
+  , sig "const" ["a"] $ a :-> a :-> a
+  , sig "const2" ["a"] $ a :-> a :-> a
+  , sig "twice" ["a"] $ a :-> a :-> a
+  , sig "sCombinator" ["a", "b", "c"] $ (a :-> b :-> c) :-> (a :-> b) :-> a :-> c
+
+  , sig "<>" [] $ TypeString :-> TypeString :-> TypeString
+
+  , sig "length" ["a"] $ dt "List" :-> TypeInt
+  , sig "map" ["a", "b"] $ (a :-> b) :-> dt "List" :-> dt "List"
   ]
-  where tvar = TypeVariable . Name

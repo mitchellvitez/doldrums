@@ -41,7 +41,7 @@ parseProgram = do
 topLevelToProgram :: Program SourcePos -> [TopLevel SourcePos] -> Program SourcePos
 topLevelToProgram Program{..} [] = Program (reverse functions) (reverse dataDeclarations)
 topLevelToProgram Program{..} (topLevel:rest) = case topLevel of
-  Decl (d@(DataDeclaration _ _)) -> topLevelToProgram Program{..} { dataDeclarations = d : dataDeclarations } rest
+  Decl (d@(DataDeclaration _ _ _)) -> topLevelToProgram Program{..} { dataDeclarations = d : dataDeclarations } rest
   Func (f@(Function _ _ _ _)) -> topLevelToProgram Program{..} { functions = f : functions } rest
 
 parseTopLevel :: Parser (TopLevel SourcePos)
@@ -69,15 +69,32 @@ parseDataDeclaration :: Parser DataDeclaration
 parseDataDeclaration = do
   lexeme $ string "data"
   dataTy <- parseTag
+  typeVars <- many parseName
   lexeme $ char '='
   constructors <- parseConstructorDeclaration `sepBy1` lexeme (char '|')
-  pure $ DataDeclaration constructors (DataType $ unTag dataTy)
+  pure $ DataDeclaration constructors (DataType $ unTag dataTy) typeVars
 
-parseConstructorDeclaration :: Parser (Tag, Arity)
+parseConstructorDeclaration :: Parser (Tag, [TypeRef])
 parseConstructorDeclaration = do
   tag <- parseTag
-  arity <- parseInt
-  pure (tag, Arity arity)
+  argTypes <- many parseTypeRef
+  pure (tag, argTypes)
+
+parseTypeRef :: Parser TypeRef
+parseTypeRef = do
+  lexeme $ spaceConsumer
+  try parseParenApp <|> try parseTypeConstructor <|> parseTypeVar
+  where
+    parseTypeConstructor = TypeRefConstructor . DataType . unTag <$> parseTag
+    parseTypeVar = TypeRefVar <$> parseName
+    parseParenApp = do
+      char '('
+      first <- parseTypeConstructor
+      args <- many parseTypeRef
+      char ')'
+      case first of
+        TypeRefConstructor dt -> pure $ TypeRefApp dt args
+        _ -> fail "Expected type constructor in parenthesized type"
 
 parseAnnotatedExpr :: Parser (AnnotatedExpr SourcePos)
 parseAnnotatedExpr = do

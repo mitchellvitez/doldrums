@@ -60,10 +60,10 @@ fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities
 
 lookupTag :: [DataDeclaration] -> Tag -> Arity
 lookupTag [] tag = error $ "Could not find constructor: " <> show tag
-lookupTag (DataDeclaration [] _dataType : rest) tag = lookupTag rest tag
-lookupTag (DataDeclaration ((tagX, arity):xs) dataType : rest) tag
-  | tag == tagX = arity
-  | otherwise = lookupTag (DataDeclaration xs dataType : rest) tag
+lookupTag (DataDeclaration [] _dataType _typeParams : rest) tag = lookupTag rest tag
+lookupTag (DataDeclaration ((x, typeRefs):xs) dataType typeParams : rest) tag
+  | tag == x = Arity $ length typeRefs
+  | otherwise = lookupTag (DataDeclaration xs dataType typeParams : rest) tag
 
 
 -- UNIQUENESS --

@@ -35,9 +35,19 @@ instance Functor Program where
   fmap f (Program funcs datas) = Program (fmap f <$> funcs) datas
 
 data DataDeclaration = DataDeclaration
-  { declarations :: [(Tag, Arity)]
+  -- ... = [Nothing :: Maybe a, Just :: a -> Maybe a]
+  { declarations :: [(Tag, [TypeRef])]
+  -- data [Maybe] a = ...
   , dataType :: DataType
+  -- forall [a, b]. ...
+  , typeParameters :: [Name]
   }
+  deriving (Eq, Show)
+
+data TypeRef
+  = TypeRefVar Name
+  | TypeRefConstructor DataType
+  | TypeRefApp DataType [TypeRef]
   deriving (Eq, Show)
 
 -- name, list of arguments, body

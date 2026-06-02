@@ -90,10 +90,10 @@ main = negate $ negate 3
       testParser parseExprConstructor "False" (ExprConstructor "False" (-1))
 
     it "parseDataDeclaration" $ do
-      testParser parseDataDeclaration "data Bool = True 1 | False 1"
-        (DataDeclaration [("True", Arity 1), ("False", Arity 1)] (DataType "Bool"))
-      testParser parseDataDeclaration "data Maybe = Nothing 0 | Just 1"
-        (DataDeclaration [("Nothing", Arity 0), ("Just", Arity 1)] (DataType "Maybe"))
+      testParser parseDataDeclaration "data Bool = True | False"
+        (DataDeclaration [("True", []), ("False", [])] (DataType "Bool") [])
+      testParser parseDataDeclaration "data Maybe a = Nothing | Just a"
+        (DataDeclaration [("Nothing", []), ("Just", [TypeRefVar "a"])] (DataType "Maybe") [Name "a"])
 
     it "parseDefinition" $ do
       testParser parseDefinition "x = 2" ("x", ExprLiteral (LiteralInt 2))

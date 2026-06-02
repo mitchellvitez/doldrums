@@ -12,13 +12,13 @@
 -- algebraic datatypes
 -- uppercase constructors with an arity (number of arguments)
 
-data List = Nil 0 | Cons 2
+data MyList a = MyNil | MyCons a (MyList a)
 
 -- `case` expressions deconstruct values by pattern matching
-length list =
+myLength list =
   case list of
-    Nil -> 0
-    Cons x xs -> 1 + length xs
+    MyNil -> 0
+    MyCons x xs -> 1 + myLength xs
 
 -- `if condition thenClause elseClause` is like a `case` on `Bool`
 -- `$` has the lowest precedence, eliminating excess parentheses
@@ -54,4 +54,4 @@ main =
   "fac(6) = " <> show (fac 6) <> "\n" <>
   "6 * 7 = " <> show (6 * 7) <> "\n" <>
   "3.0 +. 4.0 = " <> show (3.0 +. 4.0) <> "\n" <>
-  "length (Cons 1 (Cons 2 Nil)) = " <> show (length (Cons 1 (Cons 2 Nil)))
+  "myLength (MyCons 1 (MyCons 2 MyNil)) = " <> show (myLength (MyCons 1 (MyCons 2 MyNil)))

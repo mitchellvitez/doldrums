@@ -1,19 +1,19 @@
-data Bool = True 0 | False 0
+data Bool = True | False
 
-data Ordering = LT 0 | EQ 0 | GT 0
+data Ordering = LT | EQ | GT
 
 if cond then else =
   case cond of
     True -> then
     False -> else
 
-data Unit = Unit 0
+data Unit = Unit
 
-data Maybe = Nothing 0 | Just 1
+data Maybe a = Nothing | Just a
 
-data Either = Left 1 | Right 1
+data Either a b = Left a | Right b
 
-data List = Nil 0 | Cons 2
+data List a = Nil | Cons a (List a)
 
 length list =
   case list of

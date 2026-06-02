@@ -3,7 +3,7 @@
 three = if (2 == 3 || 3 < 4) 3 7
 four = ((1 + 6 - 2) * 4) / 5
 
-data Pair = Pair 2
+data Pair a b = Pair a b
 
 first p =
   case p of
