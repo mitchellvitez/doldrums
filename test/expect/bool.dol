@@ -1,6 +1,6 @@
 -- EXPECT 3
 
-myIf : Bool -> a -> a -> a
+myIf :: Bool -> a -> a -> a
 myIf c t f =
   case c of
     True -> t

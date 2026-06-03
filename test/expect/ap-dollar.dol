@@ -5,5 +5,5 @@ main = square $ addOne $ double 3
 square x = x * x
 addOne x = x + 1
 
-double : Int -> Int
+double :: Int -> Int
 double x = x + x

@@ -112,8 +112,8 @@ desugarRules = \case
   -- a == b  ~>  case compare a b of { LT -> False; EQ -> True; GT -> False }
   BinOp ann a b "==" ->
     desugarComparisonOperator ann a b (False, True, False)
-  -- a != b  ~>  case compare a b of { LT -> True; EQ -> False; GT -> True }
-  BinOp ann a b "!=" ->
+  -- a /= b  ~>  case compare a b of { LT -> True; EQ -> False; GT -> True }
+  BinOp ann a b "/=" ->
     desugarComparisonOperator ann a b (True, False, True)
   -- etc.
   BinOp ann a b "<" ->

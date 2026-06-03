@@ -181,7 +181,7 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
     "-." -> doubleBinOp (-) a b
     "*." -> doubleBinOp (*) a b
     "/." -> doubleBinOp (/) a b
-    -- comparision operators (==, !=, <, >, <=, >=) are desugared into a `case` on the `compare` primitive
+    -- comparision operators (==, /=, <, >, <=, >=) are desugared into a `case` on the `compare` primitive
     "compare" -> comparePrim a b
     -- && and || are already desugared into `case` expressions
     _    -> do

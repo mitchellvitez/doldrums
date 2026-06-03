@@ -1,4 +1,4 @@
 -- EXPECT hello world
 
-main : String
+main :: String
 main = "hello" <> " " <> "world"

@@ -9,8 +9,8 @@
 
 -}
 
--- top-level type signatures with `:`
-seven : Int
+-- top-level type signatures with `::`
+seven :: Int
 seven = 7
 
 -- algebraic datatypes
@@ -19,14 +19,14 @@ seven = 7
 data MyList a = MyNil | MyCons a (MyList a)
 
 -- `case` expressions deconstruct values by pattern matching
-myLength : MyList a -> Int
+myLength :: MyList a -> Int
 myLength list =
   case list of
     MyNil -> 0
     MyCons x xs -> 1 + myLength xs
 
 -- `case` allows `_` wildcard matches
-fib : Int -> Int
+fib :: Int -> Int
 fib n =
   case n of
     0 -> 1
@@ -35,12 +35,12 @@ fib n =
 
 -- `if condition thenClause elseClause` is like a `case` on `Bool`
 -- `$` has the lowest precedence, eliminating excess parentheses
-fac : Int -> Int
+fac :: Int -> Int
 fac n =
   if (n == 0) 1 $ n * fac (n - 1)
 
 -- `let`...`in` to name variables
-greeting : String
+greeting :: String
 greeting =
   let
     h = "Hello"
@@ -49,19 +49,19 @@ greeting =
 
 -- `\args -> body` is an anonymous (lambda) function
 -- `compose f g = \x -> f (g x)`
-shout : String -> String
+shout :: String -> String
 shout = compose (\s -> s <> "!") (\s -> s <> "!")
 
 -- `show` converts values to string
 -- `<>` concatenates strings
-describeNumber : Double -> String
+describeNumber :: Double -> String
 describeNumber x = show 7 <> show " is a number and so is " <> show x
 
 -- other operators:
--- +, -, *, /, +., -., *., /., ==, !=,
+-- +, -, *, /, +., -., *., /., ==, /=,
 -- <, >, <=, >=, &&, ||, ~, !, $
 
-main : String
+main :: String
 main =
   shout greeting <> "\n" <>
   "fib(8) = " <> show (fib 8) <> "\n" <>

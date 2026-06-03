@@ -128,7 +128,7 @@ Precedence | Associativity | Operator
 4          | left          | `-`
 4          | left          | `-.`
 3          | _none_        | `==`
-3          | _none_        | `!=`
+3          | _none_        | `/=`
 3          | _none_        | `>`
 3          | _none_        | `>=`
 3          | _none_        | `<`

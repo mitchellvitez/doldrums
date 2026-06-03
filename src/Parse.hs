@@ -143,7 +143,7 @@ opTable =
   , [ binaryOp ">="
     , binaryOp "<="
     , binaryOp "=="
-    , binaryOp "!="
+    , binaryOp "/="
     , binaryOp ">"
     , binaryOp "<"
     ]
@@ -159,7 +159,9 @@ opTable =
   ]
 
 binaryOp :: Text -> Operator Parser Expr
-binaryOp name = InfixR $ binaryOpAST name <$ (lexemeNewline . try) (string name)
+binaryOp name =
+  -- TODO: not every operator should be InfixR
+  InfixR $ binaryOpAST name <$ (lexemeNewline . try) (string name <* notFollowedBy operatorChar)
 
 binaryOpAST :: Text -> Expr -> Expr -> Expr
 binaryOpAST "$" expr1 expr2 =
@@ -302,7 +304,7 @@ parseNameChar =
 parseSignature :: Parser (Name, TypeHint)
 parseSignature = do
   name <- parseSignatureName
-  lexeme $ char ':'
+  lexeme $ string "::"
   sig <- parseTypeHint
   pure (name, sig)
 
@@ -313,9 +315,12 @@ parseSignatureName =
 parseOperatorInParens :: Parser Name
 parseOperatorInParens = do
   lexeme $ char '('
-  name <- Name . T.pack <$> some (oneOf ("~!*/.-+=<>&|$" :: String))
+  name <- Name . T.pack <$> some operatorChar
   lexeme $ char ')'
   pure name
+
+operatorChar :: Parser Char
+operatorChar = oneOf ("!#$%&*+./<=>?@\\^|-~" :: String)
 
 parseTypeHint :: Parser TypeHint
 parseTypeHint= do
