@@ -11,13 +11,14 @@ import Parse (parseProgram)
 import Typecheck
 import FixAst (fixAst)
 import Interpret (interpret)
-import Compile (compile)
+import STG (compileStg, StgExpr)
+import Data.Text (Text, pack, unpack)
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import Control.Monad (when)
-import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
 import qualified Data.Map as Map
 import Text.Megaparsec (parse, errorBundlePretty)
-import qualified Data.Text as Text
 
 putTextLn :: Text -> IO ()
 putTextLn = putStrLn . unpack
@@ -48,7 +49,7 @@ getFileText = do
 
 debug :: Bool -> Text -> IO () -> IO ()
 debug isDebug label action = when isDebug $ do
-  putTextLn $ "\n -- " <> label <> " -- "
+  putTextLn $ "\n----- " <> label <> " -----"
   action
 
 runBase :: Text -> (Text -> IO a) -> Bool -> IO a
@@ -77,15 +78,19 @@ runBase programText strat isDebug = do
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
 
+          -- TODO: compile this STG to LLVM to compile rather than interpreting
+          let stgExpr = compileStg program
+          debug isDebug "STG" $ do
+            let stgExprStr = show stgExpr
+                charLimit = 1000
+                bigger = length stgExprStr > charLimit
+            when bigger $
+              putStrLn "[Showing first 1000 characters only]"
+            putStrLn $ take charLimit stgExprStr <> if bigger then "\n[...plus " <> show (length stgExprStr - charLimit) <> " more characters]" else ""
+
           debug isDebug "OUTPUT" $ pure ()
-
-          compile program
-          strat "Compiled."
-
-          -- TODO: turn back on the option to interpret rather than compile
-          --       (this was turned off while building the compiler stages)
-          -- let
-          --     toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
-          --     topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
-          --     mainExpr = ExprVariable "main"
-          -- strat $ interpret topLevelBindings mainExpr
+          let
+              toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
+              topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
+              mainExpr = ExprVariable "main"
+          strat $ interpret topLevelBindings mainExpr
