@@ -11,12 +11,14 @@ import Parse (parseProgram)
 import Typecheck
 import FixAst (fixAst)
 import Interpret (interpret)
+import STG (compileStg, StgExpr)
+import Data.Text (Text, pack, unpack)
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import Control.Monad (when)
-import Data.Text (pack, unpack, Text)
 import System.Environment (getArgs)
 import qualified Data.Map as Map
 import Text.Megaparsec (parse, errorBundlePretty)
-import qualified Data.Text as Text
 
 putTextLn :: Text -> IO ()
 putTextLn = putStrLn . unpack
@@ -47,7 +49,7 @@ getFileText = do
 
 debug :: Bool -> Text -> IO () -> IO ()
 debug isDebug label action = when isDebug $ do
-  putTextLn $ "\n -- " <> label <> " -- "
+  putTextLn $ "\n----- " <> label <> " -----"
   action
 
 runBase :: Text -> (Text -> IO a) -> Bool -> IO a
@@ -74,6 +76,16 @@ runBase programText strat isDebug = do
             putTextLn $ "main : " <> toText types
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
+
+          -- TODO: compile this STG to LLVM to compile rather than interpreting
+          let stgExpr = compileStg program
+          debug isDebug "STG" $ do
+            let stgExprStr = show stgExpr
+                charLimit = 1000
+                bigger = length stgExprStr > charLimit
+            when bigger $
+              putStrLn "[Showing first 1000 characters only]"
+            putStrLn $ take charLimit stgExprStr <> if bigger then "\n[...plus " <> show (length stgExprStr - charLimit) <> " more characters]" else ""
 
           debug isDebug "OUTPUT" $ pure ()
           let
