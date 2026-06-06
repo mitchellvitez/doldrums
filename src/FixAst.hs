@@ -36,6 +36,7 @@ combineGroup fs@(Function annot name pats _ : _) =
       varPats = map PatternVar varNames
       clauses = [(args, body) | Function _ _ args body <- fs]
   in [Function annot name varPats (buildClauses annot varNames clauses)]
+combineGroup _ = error "invalid input to combineGroup"
 
 buildClauses :: a -> [Name] -> [([Pattern], AnnotatedExpr a)] -> AnnotatedExpr a
 buildClauses _ [var] alts =
@@ -48,6 +49,7 @@ buildClauses annot (var:vars) alts =
                 | pat <- nubBy (==) [p | (p:_, _) <- alts]]
   in AnnExprCase annot (AnnExprVariable annot var)
     [Alternative pat (buildClauses annot vars subAlts) | (pat, subAlts) <- grouped]
+buildClauses _ _ _ = error "unhandled build clauses"
 
 -- convert Program to a single Expr (`let topLevelFunction = ... in main`)
 singleExprForm :: Program a -> AnnotatedExpr a
@@ -61,7 +63,7 @@ toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
 toSingle expr func = AnnExprLet (annotation expr) [(name func, toNestedLambdas func)] expr
 
 toNestedLambdas :: Function a -> AnnotatedExpr a
-toNestedLambdas (Function annot name args body) =
+toNestedLambdas (Function annot _ args body) =
   foldr (patternToLambda annot) body args
 
 patternToLambda :: a -> Pattern -> AnnotatedExpr a -> AnnotatedExpr a
@@ -110,19 +112,19 @@ checkUniqueness :: Program a -> Program a
 checkUniqueness = checkUniqueConstructors . checkUniqueFunctions
 
 checkUniqueFunctions :: Program a -> Program a
-checkUniqueFunctions program@(Program funcs datas _ _ _) =
+checkUniqueFunctions program@(Program funcs _ _ _ _) =
   case findDuplicate Set.empty $ map name funcs of
     Nothing -> program
     Just (Name name) -> error $ "Duplicate function: " <> Text.unpack name
 
 checkUniqueConstructors :: Program a -> Program a
-checkUniqueConstructors program@(Program funcs datas _ _ _) =
+checkUniqueConstructors program@(Program _ datas _ _ _) =
   case findDuplicate Set.empty . map fst $ concatMap declarations datas of
     Nothing -> program
     Just (Tag tag) -> error $ "Duplicate constructor: " <> Text.unpack tag
 
 findDuplicate :: Ord a => Set a -> [a] -> Maybe a
-findDuplicate seen [] = Nothing
+findDuplicate _ [] = Nothing
 findDuplicate seen (x:xs) =
   if x `Set.member` seen
   then Just x
@@ -176,9 +178,14 @@ desugarComparisonOperator ann a b (lt, eq, gt) =
     , Alternative (PatternConstructor (Tag "GT") []) $ (toExprBool gt) ann
     ]
 
+toExprBool :: Bool -> a -> AnnotatedExpr a
 toExprBool False = exprFalse
 toExprBool True = exprTrue
+
+exprFalse :: a -> AnnotatedExpr a
 exprFalse ann = AnnExprConstructor ann (Tag "False") (Arity 0)
+
+exprTrue :: a -> AnnotatedExpr a
 exprTrue ann = AnnExprConstructor ann (Tag "True") (Arity 0)
 
 desugarProgram :: Program a -> Program a
@@ -200,9 +207,9 @@ desugarExpr expr =
     Nothing -> mappedExpr
 
 mapExpr :: (AnnotatedExpr a -> AnnotatedExpr a) -> AnnotatedExpr a -> AnnotatedExpr a
-mapExpr f (AnnExprVariable a n) = AnnExprVariable a n
-mapExpr f (AnnExprLiteral a l) = AnnExprLiteral a l
-mapExpr f (AnnExprConstructor a tag arity) = AnnExprConstructor a tag arity
+mapExpr _ (AnnExprVariable a n) = AnnExprVariable a n
+mapExpr _ (AnnExprLiteral a l) = AnnExprLiteral a l
+mapExpr _ (AnnExprConstructor a tag arity) = AnnExprConstructor a tag arity
 mapExpr f (AnnExprApplication a e1 e2) = AnnExprApplication a (f e1) (f e2)
 mapExpr f (AnnExprLet a bindings body) = AnnExprLet a [(name, f binding) | (name, binding) <- bindings] (f body)
 mapExpr f (AnnExprLambda a n e) = AnnExprLambda a n (f e)

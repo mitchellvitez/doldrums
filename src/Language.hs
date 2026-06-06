@@ -15,7 +15,6 @@ module Language
   )
 where
 
-import Data.List (intercalate)
 import Data.String (IsString)
 import Data.Text (Text, unpack)
 import Text.Megaparsec (SourcePos)
@@ -195,7 +194,7 @@ instance Functor AnnotatedExpr where
   fmap f (AnnExprConstructor a tag arity) = AnnExprConstructor (f a) tag arity
   fmap f (AnnExprLet a bindings body) = AnnExprLet (f a) [(name, f <$> binding) | (name, binding) <- bindings] (f <$> body)
   fmap f (AnnExprLambda a name expr) = AnnExprLambda (f a) name (f <$> expr)
-  fmap f (AnnExprCase a expr alters) = AnnExprCase (f a) (f <$> expr) (map (\(Alternative pat expr) -> (Alternative pat (f <$> expr))) alters)
+  fmap f (AnnExprCase a expr alters) = AnnExprCase (f a) (f <$> expr) (map (\(Alternative pat altExpr) -> (Alternative pat (f <$> altExpr))) alters)
 
 -- unparametrized AST, recovered by the below
 -- data Expr

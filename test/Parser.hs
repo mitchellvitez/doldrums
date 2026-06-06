@@ -25,9 +25,9 @@ testProgramParser parser input output =
   (ignoreAnnotations <$> parse parser "" input) `shouldBe` Right output
   where
     ignoreAnnotations (Program funcs datas sigs _ _) = Program funcs' datas sigs [] []
-      where funcs' = Prelude.map (\(Function annot name args expr) -> Function () name args (const () <$> expr)) funcs
+      where funcs' = Prelude.map (\(Function _ name args expr) -> Function () name args (const () <$> expr)) funcs
 
-testParserFail :: (Show a, Eq a) => Parser a -> Text -> Expectation
+testParserFail :: Show a => Parser a -> Text -> Expectation
 testParserFail parser input =
   parse parser "" input `shouldSatisfy` isLeft
 

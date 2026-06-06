@@ -13,6 +13,7 @@ import FixAst (fixAst)
 import Interpret (interpret, methodEnvFromInstances)
 import STG (compileStg)
 import Data.Text (Text, pack, unpack)
+import Data.Maybe
 import qualified Data.Text as Text
 import Control.Monad (when)
 import System.Environment (getArgs)
@@ -42,7 +43,7 @@ getFileText :: IO Text
 getFileText = do
   args <- getArgs
   when (length args /= 1) $ error "requires one filename arg"
-  let (filename:_) = args
+  let filename = fromMaybe (error "requires one filename arg") $ listToMaybe args
   input <- readFile filename
   pure $ pack input
 

@@ -162,8 +162,8 @@ newThunkWithEnv e expr = do
 
 force :: ThunkId -> State EvalState Value
 force tid = do
-  state <- get
-  case IntMap.lookup (unThunkId tid) (heap state) of
+  curState <- get
+  case IntMap.lookup (unThunkId tid) (heap curState) of
     Nothing -> throw $ RuntimeException $ "Unknown thunk, id = " <> tshow tid
     Just (Done v) -> pure v
     Just BlackHole -> throw $ RuntimeException "Infinite loop detected"
@@ -277,8 +277,9 @@ whnf (ExprCase scrutinee alts) = do
         matchingAlt = find (\(Alternative pat _) -> case pat of
           PatternConstructor altTag _ -> altTag == tag
           _ -> False) alts
-        Alternative (PatternConstructor _ argPats) altBody =
-          fromMaybe (throw $ RuntimeException $ "Non-exhaustive patterns for tag: " <> unTag tag) $ matchingAlt
+        (argPats, altBody) = case fromMaybe (throw $ RuntimeException $ "Non-exhaustive patterns for tag: " <> unTag tag) matchingAlt of
+          Alternative (PatternConstructor _ argPatPats) altPatBody -> (argPatPats, altPatBody)
+          _ -> throw $ RuntimeException "Unexpected pattern type"
       when (length argThunks /= unArity arity) $
         throw $ RuntimeException $ "Constructor not fully applied: " <> unTag tag
       when (length argPats /= length argThunks) $

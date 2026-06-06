@@ -17,7 +17,16 @@ source-repository head
   type: git
   location: https://github.com/mitchellvitez/doldrums
 
+common warnings
+  ghc-options:
+    -Wall -Wextra -Werror
+    -Wincomplete-record-updates -Wincomplete-uni-patterns
+    -Wpartial-fields -Wredundant-constraints
+    -Wunused-packages -Wambiguous-fields
+    -Wunused-type-patterns -Wno-unused-do-bind
+
 library
+  import: warnings
   exposed-modules:
       FixAst
       Graphviz
@@ -40,20 +49,16 @@ library
       StandaloneDeriving
       BangPatterns
   build-depends:
-      base >=4.7 && <5
-    , constraints >=0.12
+      base >=4.20 && <5
     , containers >=0.6
-    , deepseq >=1.4
-    , heap >=1.0
-    , hspec >=2.7
     , megaparsec >=8.0
     , mtl >=2.2
     , parser-combinators >=1.2
-    , raw-strings-qq >=1.1
     , text >=1.2
-  default-language: Haskell2010
+  default-language: GHC2024
 
 executable doldrums
+  import: warnings
   main-is: Main.hs
   hs-source-dirs:
       app
@@ -67,11 +72,12 @@ executable doldrums
       BangPatterns
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      base >=4.20 && <5
     , doldrums
-  default-language: Haskell2010
+  default-language: GHC2024
 
 test-suite doldrums-test
+  import: warnings
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   hs-source-dirs:
@@ -88,7 +94,7 @@ test-suite doldrums-test
       BangPatterns
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      base >=4.20 && <5
     , directory >=1.3
     , doldrums
     , filepath >=1.4
@@ -96,4 +102,4 @@ test-suite doldrums-test
     , megaparsec >=8.0
     , raw-strings-qq >=1.1
     , text >=1.2
-  default-language: Haskell2010
+  default-language: GHC2024

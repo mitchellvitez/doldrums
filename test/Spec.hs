@@ -53,9 +53,9 @@ data TestDirective
   | MissingDirective
 
 data TestProgram = TestProgram
-  { name :: Text
-  , content :: Text
-  , directive :: TestDirective
+  { _name :: Text
+  , _content :: Text
+  , _directive :: TestDirective
   }
 
 type ProgramContent = Text
@@ -98,7 +98,7 @@ mkDolTest (TestProgram name content (ExpectDirective expected)) =
     start <- getCPUTime
     output <- runTest content
     end <- getCPUTime
-    let elapsed = fromIntegral (end - start) / 10^12 :: Double
+    let elapsed = fromIntegral (end - start) / (10 :: Double)^(12 :: Integer)
     TIO.putStrLn $ "  [TIME] " <> T.pack (show elapsed) <> "s"
     output `shouldBe` expected
 mkDolTest (TestProgram name _ MissingDirective) =

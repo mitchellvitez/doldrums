@@ -101,14 +101,14 @@ instance Types Type where
   freeTypeVariable TypeInt = Set.empty
   freeTypeVariable TypeString = Set.empty
   freeTypeVariable TypeDouble = Set.empty
-  freeTypeVariable (TypeTagged t) = Set.empty
+  freeTypeVariable (TypeTagged _) = Set.empty
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
     Nothing -> TypeVariable name
     Just t -> t
   apply subs (a :-> b) = apply subs a :-> apply subs b
-  apply subs t = t
+  apply _ t = t
 
 instance Types a => Types [a] where
   freeTypeVariable list = foldr Set.union Set.empty $ map freeTypeVariable list
@@ -150,9 +150,9 @@ addConstraints cs = modify $ \s -> s { typeConstraints = typeConstraints s <> cs
 
 newTypeVar :: Text -> TypeInstantiation Type
 newTypeVar prefix = do
-  state <- get
-  put state { typeInstantiationSupply = typeInstantiationSupply state + 1 }
-  pure . TypeVariable . Name $ prefix <> (tshow $ typeInstantiationSupply state)
+  curState <- get
+  put curState { typeInstantiationSupply = typeInstantiationSupply curState + 1 }
+  pure . TypeVariable . Name $ prefix <> (tshow $ typeInstantiationSupply curState)
 
 instantiate :: Scheme -> TypeInstantiation (Type, [Constraint])
 instantiate (Scheme vars constraints t) = do
@@ -176,6 +176,7 @@ unify sourcePos (TypeTagged (DataType a)) (TypeTagged (DataType b)) =
   else throwTypeCheckingException sourcePos a b
 unify sourcePos a b = throwTypeCheckingException sourcePos a b
 
+throwTypeCheckingException :: (Show a, Show b) => SourcePos -> a -> b -> TypeInstantiation Substitution
 throwTypeCheckingException sourcePos a b =
   throw . TypeCheckingException sourcePos $ fold
     [ "Type mismatch: "
@@ -202,7 +203,7 @@ typeCheckExpr _ (AnnExprLiteral _ (LiteralString _)) =
   pure (emptySubstitution, TypeString)
 typeCheckExpr _ (AnnExprLiteral _ (LiteralDouble _)) =
   pure (emptySubstitution, TypeDouble)
-typeCheckExpr env@(TypeEnv envMap) (AnnExprConstructor sourcePos tag _arity) =
+typeCheckExpr (TypeEnv envMap) (AnnExprConstructor _ tag _) =
   case Map.lookup (Name $ unTag tag) envMap of
     Just scheme -> do
       (instantiatedType, constraints) <- instantiate scheme
@@ -211,7 +212,7 @@ typeCheckExpr env@(TypeEnv envMap) (AnnExprConstructor sourcePos tag _arity) =
     Nothing -> do
       ty <- newTypeVar "a"
       pure (emptySubstitution, ty)
-typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
+typeCheckExpr (TypeEnv env) (AnnExprVariable _ name) =
   case Map.lookup name env of
     Nothing -> do
       ty <- newTypeVar "a"
@@ -239,7 +240,7 @@ typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
   ty <- newTypeVar "a"
   foldM (foldStep sigMap env) (emptySubstitution, ty) bindings
   where
-    foldStep sigMap env (subs0, type0) (name, expr1) = do
+    foldStep sigMap env (_, _) (name, expr1) = do
       (subs1, type1) <- typeCheckExpr env expr1
       subsSig <- case Map.lookup name sigMap of
         Just sigScheme -> do
@@ -253,24 +254,24 @@ typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
           env2 = TypeEnv $ Map.insert name generalizedType env1
       (subs2, type2) <- typeCheckExpr (apply subs1' env2) expr2
       pure (subs2 `combineSubstitutions` subs1', type2)
-typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
+typeCheckExpr env (AnnExprCase sourcePos _ alts) = do
   let toNestedLambdas :: CaseAlternative SourcePos -> (Int, AnnotatedExpr SourcePos)
       toNestedLambdas (Alternative pattern body) =
         ( length $ patternNames pattern
-        , foldr (\name expr -> AnnExprLambda sourcePos name expr) body $ patternNames pattern
+        , foldr (\name altExpr -> AnnExprLambda sourcePos name altExpr) body $ patternNames pattern
         )
   let removeArgsFromType :: Int -> Type -> Type
       removeArgsFromType 0 t = t
-      removeArgsFromType n (a :-> b) = removeArgsFromType (n-1) b
+      removeArgsFromType n (_ :-> b) = removeArgsFromType (n - 1) b
       removeArgsFromType _ _ = error "bad case pattern match"
   let altExprs = map toNestedLambdas alts
-  altExprTypes@(firstAltExprType:_) :: [(Substitution, Type)] <- forM altExprs $ \(numArgs, expr) -> do
-    (s, t) <- typeCheckExpr env expr
+  altExprTypes@(firstAltExprType:_) :: [(Substitution, Type)] <- forM altExprs $ \(numArgs, altExpr) -> do
+    (s, t) <- typeCheckExpr env altExpr
     pure (s, removeArgsFromType numArgs t)
   foldM foldAction firstAltExprType altExprTypes
   where
     foldAction :: (Substitution, Type) -> (Substitution, Type) -> TypeInstantiation (Substitution, Type)
-    foldAction (s1, t1) (s2, t2) = do
+    foldAction (_, t1) (_, t2) = do
       newSubs <- unify sourcePos t1 t2
       pure (newSubs, t1)
 
@@ -365,14 +366,14 @@ typeInference program programText = do
 
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Scheme)]
     initialFunctionTypes (Program [] [] _ _ _) _ = []
-    initialFunctionTypes (Program (Function _ name args body : restFuncs) datas sigs cls insts) n =
+    initialFunctionTypes (Program (Function _ name args _ : restFuncs) datas sigs cls instances) n =
       (name, Scheme [] [] $ functionType n (Arity $ length args) Nothing)
-        : initialFunctionTypes (Program restFuncs datas sigs cls insts) (n+1)
-    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas) sigs cls insts) n =
-      initialFunctionTypes (Program funcs restDatas sigs cls insts) n
-    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas) sigs cls insts) n =
+        : initialFunctionTypes (Program restFuncs datas sigs cls instances) (n+1)
+    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas) sigs cls instances) n =
+      initialFunctionTypes (Program funcs restDatas sigs cls instances) n
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas) sigs cls instances) n =
       (Name $ unTag x, constructorScheme typeParams typeRefs dataTy)
-      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas) sigs cls insts) (n+1)
+      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas) sigs cls instances) (n+1)
 
     constructorScheme :: [Name] -> [TypeRef] -> DataType -> Scheme
     constructorScheme typeParams typeRefs dataTy =

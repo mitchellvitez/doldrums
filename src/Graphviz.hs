@@ -61,7 +61,7 @@ labelProgram program@Program{..} = do
     }
 
 labelFunction :: Function () -> State LabelState (Function Integer)
-labelFunction (Function annot name args body) = do
+labelFunction (Function _ name args body) = do
   getNext
   (n, env) <- get
   when (name `Map.member` env) $ error "duplication function with same name"
@@ -78,10 +78,10 @@ labelExpr :: Expr -> State LabelState (AnnotatedExpr Integer)
 labelExpr (ExprLiteral x) = do
   n <- getNext
   pure $ AnnExprLiteral n x
-labelExpr e@(ExprConstructor tag arity) = do
+labelExpr (ExprConstructor tag arity) = do
   n <- getNext
   pure $ AnnExprConstructor n tag arity
-labelExpr e@(ExprVariable var) = do
+labelExpr (ExprVariable var) = do
   (_, env) <- get
   case Map.lookup var env of
     Nothing -> do
@@ -119,7 +119,7 @@ programToGraphviz Program{..} =
   fold $ functionToGraphviz (Set.fromList $ fmap name functions) <$> functions
 
 functionToGraphviz :: Set Name -> Function Integer -> Text
-functionToGraphviz functionNames (Function annot name args body) = fold
+functionToGraphviz functionNames (Function annot name _ body) = fold
   [ boxNode annot $ unName name
   , exprToGraphviz functionNames body
   , annotation body `pointsTo` annot
@@ -137,7 +137,7 @@ exprToGraphviz :: Set Name -> AnnotatedExpr Integer -> Text
 exprToGraphviz _ (AnnExprLiteral n (LiteralInt l)) = node n $ tshow l
 exprToGraphviz _ (AnnExprLiteral n (LiteralString s)) = node n $ escapeQuotes $ tshow s
 exprToGraphviz _ (AnnExprLiteral n (LiteralDouble d)) = node n $ tshow d
-exprToGraphviz _ (AnnExprConstructor n (Tag t) a) =
+exprToGraphviz _ (AnnExprConstructor n (Tag t) _) =
   node n t
 exprToGraphviz functionNames (AnnExprVariable n v) =
   if v `elem` functionNames then "" else node n (unName v)
@@ -149,12 +149,12 @@ exprToGraphviz functionNames (AnnExprApplication n f x) = fold
   , annotation x `pointsTo` n
   ]
 exprToGraphviz functionNames (AnnExprLet a bindings body) = fold $
-  [ foldMap (uncurry toGraphviz) bindings
+  [ foldMap (uncurry toGraphvizBinding) bindings
   , exprToGraphviz functionNames body
   , annotation body `pointsTo` a
   ]
   where
-    toGraphviz name binding = fold
+    toGraphvizBinding name binding = fold
       [ node a $ "Let (" <> unName name <> ")"
       , exprToGraphviz functionNames binding
       , annotation binding `pointsTo` a
