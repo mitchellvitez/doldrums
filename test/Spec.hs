@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NumericUnderscores #-}
 
-import Lib (runTest)
+import Lib (execute, DebugFlag(..), CompileFlag(..))
 import Parser (parserSpec)
 
 import Control.Monad
@@ -43,7 +43,7 @@ main = hspec $ do
   describe "tour" $
     it "compiles tour.dol" $ do
       content <- TIO.readFile "tour.dol"
-      void $ runTest content
+      void $ execute content pure NoDebugInfo Interpreted
 
 data TestDirective
   = ExpectDirective Text
@@ -86,7 +86,7 @@ mkDolTest (TestProgram name _ IgnoreDirective) =
   xit (T.unpack name) pending
 mkDolTest (TestProgram name content BrokenDirective) =
   it (T.unpack name) $ do
-    result <- timeout 100_000 . try $ runTest content
+    result <- timeout 100_000 . try $ execute content pure NoDebugInfo Interpreted
     case result of
       Nothing -> expectationFailure "Timed out after 100ms"
       Just (Right _) -> expectationFailure "Expected an exception but program succeeded"
@@ -94,7 +94,7 @@ mkDolTest (TestProgram name content BrokenDirective) =
         TIO.putStrLn $ "  " <> T.pack (show e)
 mkDolTest (TestProgram name content (ExpectDirective expected)) =
   it (T.unpack name) $ do
-    result <- timeout 100_000 $ runTest content
+    result <- timeout 100_000 $ execute content pure NoDebugInfo Interpreted
     case result of
       Nothing -> expectationFailure "Timed out after 100ms"
       Just output -> output `shouldBe` expected
