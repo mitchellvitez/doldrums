@@ -2,5 +2,5 @@
 
 add1 x = x + 1
 times2 x = x * 2
-math x = compose add1 times2 x
+math x = add1 . times2 $ x
 main = math 5

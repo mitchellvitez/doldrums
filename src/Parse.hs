@@ -173,10 +173,12 @@ parseOperator = makeExprParser parseExprApplication opTable
 opTable :: [[Operator Parser Expr]]
 opTable =
   [
-  -- level 9 (function application)
+  -- level 9
+    [ binaryOp "." InfixR
+    ]
   -- level 8
   -- level 7
-    [ binaryOp "*" InfixL
+  , [ binaryOp "*" InfixL
     , binaryOp "/" InfixL
     ]
   -- level 6
@@ -213,6 +215,8 @@ binaryOp name fixity =
 binaryOpAST :: Text -> Expr -> Expr -> Expr
 binaryOpAST "$" expr1 expr2 =
   ExprApplication expr1 expr2
+binaryOpAST "." expr1 expr2 =
+  ExprLambda (Name "compositionresult") (ExprApplication expr1 (ExprApplication expr2 (ExprVariable (Name "compositionresult"))))
 binaryOpAST name expr1 expr2 =
   ExprApplication (ExprApplication (ExprVariable (Name name)) expr1) expr2
 

@@ -36,7 +36,7 @@ class Ord a where
 class Semigroup a where
   (<>) :: a -> a -> a
 
-class Monoid a where
+class Semigroup a => Monoid a where
   mempty :: a
 
 -- TODO: FAM
@@ -53,6 +53,7 @@ class Monoid a where
 
 -- standalone type signatures for built-ins
 ($) :: (a -> b) -> a -> b
+(.) :: (b -> c) -> (a -> b) -> a -> c
 (&&) :: Bool -> Bool -> Bool
 (||) :: Bool -> Bool -> Bool
 
@@ -93,11 +94,8 @@ flip f x y = f y x
 sCombinator :: (a -> b -> c) -> (a -> b) -> a -> c
 sCombinator f g x = f x (g x)
 
-compose :: (b -> c) -> (a -> b) -> a -> c
-compose f g = \x -> f (g x)
-
 twice :: (a -> a) -> a -> a
-twice f = compose f f
+twice f = f . f
 
 length :: List a -> Int
 length list =

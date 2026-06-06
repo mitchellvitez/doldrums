@@ -48,9 +48,9 @@ greeting =
   in h <> ", " <> w
 
 -- `\args -> body` is an anonymous (lambda) function
--- `compose f g = \x -> f (g x)`
+-- `f . g = \x -> f (g x)`
 shout :: String -> String
-shout = compose (\s -> s <> "!") (\s -> s <> "!")
+shout = (\s -> s <> "!") . (\s -> s <> "!")
 
 -- `show` converts values to string
 -- `<>` concatenates strings
