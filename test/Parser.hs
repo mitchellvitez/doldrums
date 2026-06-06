@@ -124,6 +124,12 @@ main = negate $ negate 3
       testParser parseExprLambda "\\x -> x" (ExprLambda "x" (ExprVariable "x"))
       testParser parseExprLambda "\\x y -> x" (ExprLambda "x" (ExprLambda "y" (ExprVariable "x")))
 
+    it "parseExprLambdaCase" $ do
+      testParser parseExprLambda "\\case\n  Nothing -> 0\n  Just x -> x"
+        (ExprLambda "caseVar" (ExprCase (ExprVariable "caseVar")
+          [Alternative (PatternConstructor "Nothing" []) (ExprLiteral (LiteralInt 0))
+          , Alternative (PatternConstructor "Just" [PatternVar "x"]) (ExprVariable "x")]))
+
     it "operator precedence (* over +)" $ do
       testParser parseExpr "1 + 2 * 3"
         (ExprApplication (ExprApplication (ExprVariable "+") (ExprLiteral (LiteralInt 1)))

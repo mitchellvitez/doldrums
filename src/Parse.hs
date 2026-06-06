@@ -296,7 +296,17 @@ parseDefinition = do
   pure (name, body)
 
 parseExprLambda :: Parser Expr
-parseExprLambda = do
+parseExprLambda = try parseExprLambdaCase <|> parseExprLambdaStandard
+
+parseExprLambdaCase :: Parser Expr
+parseExprLambdaCase = do
+  lexeme . try $ string "\\case" <* notFollowedBy parseNameChar
+  alternatives <- manyIndented parseCaseAlternative
+  let var = Name "caseVar"
+  pure $ ExprLambda var (ExprCase (ExprVariable var) alternatives)
+
+parseExprLambdaStandard :: Parser Expr
+parseExprLambdaStandard = do
   lexeme $ char '\\'
   abstractions <- some parseName
   lexeme $ string "->"

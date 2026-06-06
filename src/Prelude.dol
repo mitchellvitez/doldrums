@@ -135,20 +135,18 @@ null Nil = True
 null (Cons _ _) = False
 
 take :: List a -> Int -> List a
-take list n =
-  case (n <= 0) of
-    True -> list
-    False -> case list of
-      Nil -> Nil
-      Cons x xs -> Cons x $ take (n - 1) xs
+take list n = case n <= 0 of
+  True -> list
+  False -> case list of
+    Nil -> Nil
+    Cons x xs -> Cons x $ take (n - 1) xs
 
 drop :: List a -> Int -> List a
-drop list n =
-  case (n <= 0) of
-    True -> list
-    False -> case list of
-      Nil -> Nil
-      Cons x xs -> drop (n - 1) xs
+drop list n = case n <= 0 of
+  True -> list
+  False -> case list of
+    Nil -> Nil
+    Cons x xs -> drop (n - 1) xs
 
 elem :: a -> List a -> Bool
 elem x Nil = False
