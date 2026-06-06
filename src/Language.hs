@@ -73,6 +73,8 @@ data TypeclassDeclaration = TypeclassDeclaration
   { typeclassName :: Name
   -- a
   , typeclassParameter :: Name
+  -- Semigroup a =>
+  , superclassConstraints :: [(Name, TypeHint)]
   -- (==) :: a -> a -> Bool
   , typeclassMethods :: [(Name, TypeHint)]
   } deriving (Eq, Show)
@@ -108,7 +110,7 @@ data TypeHint
 data Function a = Function
   { annot :: a
   , name :: Name
-  , args :: [Name]
+  , args :: [Pattern]
   , body :: AnnotatedExpr a
   }
   deriving Eq
@@ -116,7 +118,7 @@ deriving instance Show (Function SourcePos)
 
 instance Show (Function ()) where
   show (Function _ name args body) =
-    unpack (unName name) <> " " <> intercalate " " (map (unpack . unName) args) <> " = " <> show body
+    unpack (unName name) <> " " <> show args <> " = " <> show body
 
 instance Functor Function where
   fmap f (Function annot name args body) = Function (f annot) name args (f <$> body)

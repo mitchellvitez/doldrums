@@ -134,7 +134,7 @@ main = negate $ negate 3
 id x = x
 main = id 2
 |]
-        (Program [Function () "id"  ["x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprLiteral (LiteralInt 2)))] [] [] [] [])
+        (Program [Function () "id"  [PatternVar "x"] (ExprVariable "x"), Function () "main" [] (ExprApplication (ExprVariable "id") (ExprLiteral (LiteralInt 2)))] [] [] [] [])
 
     it "parseExprApplication" $ do
       testParser parseExprApplication "f x" (ExprApplication (ExprVariable "f") (ExprVariable "x"))
@@ -145,7 +145,7 @@ main = double 21
 double x = x + x
 |]
         (Program [ Function () "main" [] (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 21)))
-        , Function () "double" ["x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
+        , Function () "double" [PatternVar "x"] (ExprApplication (ExprApplication (ExprVariable "+") (ExprVariable "x")) (ExprVariable "x"))
         ] [] [] [] [])
 
     it "num plus string - parses" $ do
@@ -158,4 +158,4 @@ f p = (id p) * p
 double n = n * 2
 main = f (double 4)
 |]
-        (Program [Function () "id" ["x"] (ExprVariable "x"), Function () "f" ["p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" ["n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [] [] [] [])
+        (Program [Function () "id" [PatternVar "x"] (ExprVariable "x"), Function () "f" [PatternVar "p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" [PatternVar "n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [] [] [] [])

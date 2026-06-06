@@ -1,4 +1,4 @@
--- BROKEN
+-- EXPECT hello
 
 f x = x
 

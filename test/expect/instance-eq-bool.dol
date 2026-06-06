@@ -1,0 +1,11 @@
+-- EXPECT False
+
+class Equal a where
+  eq :: a -> a -> Bool
+
+instance Equal Bool where
+  eq True  True  = True
+  eq False False = True
+  eq _     _     = False
+
+main = eq True False

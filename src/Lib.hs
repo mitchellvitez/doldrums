@@ -58,8 +58,6 @@ runBase programText strat isDebug = do
   case parse parseProgram "" (pack preludeFile) of
     Left e -> error $ errorBundlePretty e
     Right prelude -> do
-
-
       debug isDebug "INPUT" . mapM_ putTextLn $ Text.lines programText
 
       case parse parseProgram "" programText of
@@ -92,10 +90,11 @@ runBase programText strat isDebug = do
 
           debug isDebug "OUTPUT" $ pure ()
           let
-              toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
+              toLambdaBinding (Function _ name args body) = (name, foldr patternToBinding body args)
+              patternToBinding (PatternVar n) b = ExprLambda n b
+              patternToBinding pat b = ExprLambda (Name "pat") (ExprCase (ExprVariable (Name "pat")) [Alternative pat b])
               prog = fmap (const ()) program
-              topLevelBindings =
-                map toLambdaBinding (functions prog)
+              topLevelBindings = map toLambdaBinding $ functions prog
               mainExpr = ExprVariable "main"
               typeMap = Map.fromList
                 [ (tag, Name $ unDataType dt)

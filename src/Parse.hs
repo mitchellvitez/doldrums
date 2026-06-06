@@ -69,11 +69,12 @@ symbol = void . L.symbol' spaceConsumer
 parseClassDeclaration :: Parser TypeclassDeclaration
 parseClassDeclaration = do
   lexeme $ string "class"
+  superclass <- try parseContext <|> pure []
   name <- Name . unTag <$> parseTag
   param <- parseName
   lexeme $ string "where"
   methods <- try (manyIndented parseSignature) <|> fmap pure parseSignature
-  pure $ TypeclassDeclaration name param methods
+  pure $ TypeclassDeclaration name param superclass methods
 
 parseInstanceDeclaration :: Parser (InstanceDeclaration SourcePos)
 parseInstanceDeclaration = do
@@ -107,15 +108,18 @@ parseMultipleConstraints = do
 parseMethodDef :: Parser (Name, AnnotatedExpr SourcePos)
 parseMethodDef = do
   methodName <- parseSignatureName
-  args <- many parseName
+  args <- many parsePattern
   lexeme $ string "="
   body <- parseAnnotatedExpr
-  pure (methodName, foldr (\arg b -> AnnExprLambda (annotation b) arg b) body args)
+  pure (methodName, foldr (\arg b -> AnnExprLambda (annotation b) (freshPatternVar arg) b) body args)
+    where
+      freshPatternVar (PatternVar n) = n
+      freshPatternVar _ = Name "pat"
 
 parseFunction :: Parser (Function SourcePos)
 parseFunction = do
   name <- parseName
-  args <- many parseName
+  args <- many parsePattern
   L.symbol' spaceConsumerNewline "=" >> return ()
   body <- parseAnnotatedExpr
   sourcePos <- getSourcePos

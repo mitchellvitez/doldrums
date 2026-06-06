@@ -10,12 +10,44 @@ where
 
 import Language
 import Data.List
+import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 import qualified Data.Text as Text
 
 fixAst :: Program a -> Program a
-fixAst = desugarProgram . fixArities . checkUniqueness
+fixAst = desugarProgram . fixArities . checkUniqueness . combineFunctions
+
+-- group functions by name and combine pattern-matching clauses into one
+combineFunctions :: Program a -> Program a
+combineFunctions program@Program{..} =
+  program { functions = concatMap combineGroup $ groupByName functions }
+
+-- allow for multiple definitions (i.e. multiple pattern matches with same function name)
+groupByName :: [Function a] -> [[Function a]]
+groupByName = Map.elems . Map.fromListWith (flip (++)) . map (\f -> (name f, [f]))
+
+combineGroup :: [Function a] -> [Function a]
+combineGroup [f] = [f]
+combineGroup fs@(Function annot name pats _ : _) =
+  let arity = length pats
+      varNames = [Name $ "x" <> Text.pack (show i) | i <- [1..arity]]
+      varPats = map PatternVar varNames
+      clauses = [(args, body) | Function _ _ args body <- fs]
+  in [Function annot name varPats (buildClauses annot varNames clauses)]
+
+buildClauses :: a -> [Name] -> [([Pattern], AnnotatedExpr a)] -> AnnotatedExpr a
+buildClauses _ [var] alts =
+  AnnExprCase ann (AnnExprVariable ann var)
+    [Alternative pat body | ([pat], body) <- alts]
+  where
+    ann = annotation . snd $ fromMaybe (error "empty case expression") (listToMaybe alts)
+buildClauses annot (var:vars) alts =
+  let grouped = [(pat, [(pats, body) | (p':pats, body) <- alts, p' == pat])
+                | pat <- nubBy (==) [p | (p:_, _) <- alts]]
+  in AnnExprCase annot (AnnExprVariable annot var)
+    [Alternative pat (buildClauses annot vars subAlts) | (pat, subAlts) <- grouped]
 
 -- convert Program to a single Expr (`let topLevelFunction = ... in main`)
 singleExprForm :: Program a -> AnnotatedExpr a
@@ -30,7 +62,12 @@ toSingle expr func = AnnExprLet (annotation expr) [(name func, toNestedLambdas f
 
 toNestedLambdas :: Function a -> AnnotatedExpr a
 toNestedLambdas (Function annot name args body) =
-  foldr (AnnExprLambda annot) body args
+  foldr (patternToLambda annot) body args
+
+patternToLambda :: a -> Pattern -> AnnotatedExpr a -> AnnotatedExpr a
+patternToLambda annot (PatternVar n) body = AnnExprLambda annot n body
+patternToLambda annot pat body =
+  AnnExprLambda annot (Name "pat") (AnnExprCase annot (AnnExprVariable annot (Name "pat")) [Alternative pat body])
 
 -- FIX ARITIES --
 
