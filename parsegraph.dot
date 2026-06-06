@@ -1,45 +1,39 @@
 digraph G {
-  node [shape=box]
+  rankdir=TB
+  margin=0
+  nodesep=0.2
+  ranksep=0.2
+  node [shape=box, style=rounded, fontname=Helvetica, fontsize=8, height=0.2]
+  edge [arrowsize=0.5]
 
-  Program -> TopLevelDefinition
+  Program -> {Function, DataDeclaration, TypeSignature, TypeclassDeclaration, InstanceDeclaration}
 
-  TopLevelDefinition -> Name
-  TopLevelDefinition -> Annotated
+  Function -> {Name, AnnotatedExpr}
+  DataDeclaration -> {DataType, Name, Tag}
+  TypeSignature -> {Name, TypeHint}
+  TypeclassDeclaration -> {Name, TypeHint}
+  InstanceDeclaration -> {Name, TypeHint, AnnotatedExpr}
 
-  Annotated -> Expr
+  AnnotatedExpr -> {ExprVariable, ExprLiteral, ExprConstructor, ExprApplication, ExprLet, ExprLambda, ExprCase}
+  ExprVariable -> Name
+  ExprConstructor -> {Tag, Arity}
+  ExprApplication -> AnnotatedExpr
+  ExprLet -> AnnotatedExpr
+  ExprLambda -> AnnotatedExpr
 
-  Expr -> Let
-  Expr -> Lambda
-  Expr -> Operator
+  ExprCase -> {CaseAlternative, AnnotatedExpr}
+  CaseAlternative -> {Pattern, AnnotatedExpr}
 
-  Operator -> BinaryOp
-  Operator -> PrefixOp
-  Operator -> Application
+  Pattern -> {PatternVar, PatternWildcard, PatternLiteral, PatternConstructor}
+  PatternVar -> Name
+  PatternLiteral -> Literal
+  PatternConstructor -> Tag
+  PatternConstructor -> Pattern
 
-  Literal -> Int
-  Literal -> Bool
-  Literal -> String
-  Literal -> Double
+  ExprLiteral -> Literal
+  Literal -> {LiteralInt, LiteralString, LiteralDouble}
 
-  Let -> Definition
-  Let -> Expr
-
-  Definition -> Name
-  Definition -> Expr
-
-  Lambda -> Name
-  Lambda -> Expr
-
-  Application -> Atomic
-
-  Atomic -> Variable
-  Atomic -> Literal
-  Atomic -> Constructor
-  Atomic -> Parenthesized
-
-  Variable -> Name
-
-  Parenthesized -> Expr
-
-  Name -> NameChar
+  TypeHint -> {TypeHintVar, TypeHintConstructor, TypeHintArrow, TypeHintConstraint}
+  TypeHintVar -> Name
+  TypeHintConstructor -> DataType
 }
