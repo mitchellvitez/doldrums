@@ -1,28 +1,28 @@
 digraph G {
   rankdir=TB
   margin=0
-  nodesep=0.2
-  ranksep=0.2
-  node [shape=box, style=rounded, fontname=Helvetica, fontsize=8, height=0.2]
-  edge [arrowsize=0.5]
+  nodesep=0.1
+  ranksep=0.4
+  node [shape=box, style=rounded, fontname=Helvetica, fontsize=12, height=0.4]
+  edge [arrowsize=0.8]
 
   Program -> {Function, DataDeclaration, TypeSignature, TypeclassDeclaration, InstanceDeclaration}
 
-  Function -> {Name, AnnotatedExpr}
+  Function -> {Name, Expr}
   DataDeclaration -> {DataType, Name, Tag}
   TypeSignature -> {Name, TypeHint}
   TypeclassDeclaration -> {Name, TypeHint}
-  InstanceDeclaration -> {Name, TypeHint, AnnotatedExpr}
+  InstanceDeclaration -> {Name, TypeHint, Expr}
 
-  AnnotatedExpr -> {ExprVariable, ExprLiteral, ExprConstructor, ExprApplication, ExprLet, ExprLambda, ExprCase}
+  Expr -> {ExprVariable, ExprLiteral, ExprConstructor, ExprApplication, ExprLet, ExprLambda, ExprCase}
   ExprVariable -> Name
   ExprConstructor -> {Tag, Arity}
-  ExprApplication -> AnnotatedExpr
-  ExprLet -> AnnotatedExpr
-  ExprLambda -> AnnotatedExpr
+  ExprApplication -> Expr
+  ExprLet -> Expr
+  ExprLambda -> Expr
 
-  ExprCase -> {CaseAlternative, AnnotatedExpr}
-  CaseAlternative -> {Pattern, AnnotatedExpr}
+  ExprCase -> {CaseAlternative, Expr}
+  CaseAlternative -> {Pattern, Expr}
 
   Pattern -> {PatternVar, PatternWildcard, PatternLiteral, PatternConstructor}
   PatternVar -> Name
