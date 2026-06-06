@@ -14,7 +14,8 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
-import qualified Data.Text as Text
+import Data.Text (Text)
+import qualified Data.Text as T
 
 fixAst :: Program a -> Program a
 fixAst = desugarProgram . fixArities . checkUniqueness . combineFunctions
@@ -32,7 +33,7 @@ combineGroup :: [Function a] -> [Function a]
 combineGroup [f] = [f]
 combineGroup fs@(Function annot name pats _ : _) =
   let arity = length pats
-      varNames = [Name $ "x" <> Text.pack (show i) | i <- [1..arity]]
+      varNames = [Name $ "x" <> T.pack (show i) | i <- [1..arity]]
       varPats = map PatternVar varNames
       clauses = [(args, body) | Function _ _ args body <- fs]
   in [Function annot name varPats (buildClauses annot varNames clauses)]
@@ -45,11 +46,26 @@ buildClauses _ [var] alts =
   where
     ann = annotation . snd $ fromMaybe (error "empty case expression") (listToMaybe alts)
 buildClauses annot (var:vars) alts =
-  let grouped = [(pat, [(pats, body) | (p':pats, body) <- alts, p' == pat])
-                | pat <- nubBy (==) [p | (p:_, _) <- alts]]
+  let grouped = Map.elems $ Map.fromListWith
+        (\(p1, s1) (p2, s2) -> (chooseRepresentative p1 p2, s1 <> s2))
+        [ (patternGroupKey p, (p, [(pats, body)])) | (p:pats, body) <- alts]
+
+      chooseRepresentative p1 p2 = case (p1, p2) of
+        (PatternVar _, _) -> p1
+        (_, PatternVar _) -> p2
+        _ -> p1
+
+      patternGroupKey PatternWildcard = CatchAllKey
+      patternGroupKey (PatternVar _) = CatchAllKey
+      patternGroupKey (PatternLiteral l) = LiteralKey (T.pack $ show l)
+      patternGroupKey (PatternConstructor t _) = ConstructorKey t
+
   in AnnExprCase annot (AnnExprVariable annot var)
     [Alternative pat (buildClauses annot vars subAlts) | (pat, subAlts) <- grouped]
 buildClauses _ _ _ = error "unhandled build clauses"
+
+data PatternGroupKey = CatchAllKey | LiteralKey Text | ConstructorKey Tag
+  deriving (Eq, Ord)
 
 -- convert Program to a single Expr (`let topLevelFunction = ... in main`)
 singleExprForm :: Program a -> AnnotatedExpr a
@@ -115,13 +131,13 @@ checkUniqueFunctions :: Program a -> Program a
 checkUniqueFunctions program@(Program funcs _ _ _ _) =
   case findDuplicate Set.empty $ map name funcs of
     Nothing -> program
-    Just (Name name) -> error $ "Duplicate function: " <> Text.unpack name
+    Just (Name name) -> error $ "Duplicate function: " <> T.unpack name
 
 checkUniqueConstructors :: Program a -> Program a
 checkUniqueConstructors program@(Program _ datas _ _ _) =
   case findDuplicate Set.empty . map fst $ concatMap declarations datas of
     Nothing -> program
-    Just (Tag tag) -> error $ "Duplicate constructor: " <> Text.unpack tag
+    Just (Tag tag) -> error $ "Duplicate constructor: " <> T.unpack tag
 
 findDuplicate :: Ord a => Set a -> [a] -> Maybe a
 findDuplicate _ [] = Nothing
@@ -166,7 +182,7 @@ desugarRules = \case
     desugarComparisonOperator ann a b (False, True, True)
   _ -> Nothing
 
-pattern BinOp :: a -> AnnotatedExpr a -> AnnotatedExpr a -> Text.Text -> AnnotatedExpr a
+pattern BinOp :: a -> AnnotatedExpr a -> AnnotatedExpr a -> Text -> AnnotatedExpr a
 pattern BinOp ann a b op <-
   AnnExprApplication ann (AnnExprApplication _ (AnnExprVariable _ (Name op)) a) b
 

@@ -39,11 +39,10 @@ class Semigroup a where
 class Semigroup a => Monoid a where
   mempty :: a
 
--- TODO: FAM
 -- class Functor f where
 --   (<$>) :: (a -> b) -> f a -> f b
 --   fmap :: (a -> b) -> f a -> f b
---
+
 -- class Functor f => Applicative f where
 --   pure :: a -> f a
 --   (<*>) :: f (a -> b) -> f a -> f b
@@ -59,10 +58,11 @@ class Semigroup a => Monoid a where
 
 -- TODO: haskell-style ternary keywords
 if :: Bool -> a -> a -> a
-if cond then else =
-  case cond of
-    True -> then
-    False -> else
+if cond then else = case cond of
+  True -> then
+  False -> else
+
+otherwise = True
 
 not :: Bool -> Bool
 not x = if x False True
@@ -97,16 +97,100 @@ sCombinator f g x = f x (g x)
 twice :: (a -> a) -> a -> a
 twice f = f . f
 
+-- lists
 length :: List a -> Int
-length list =
-  case list of
-    Nil -> 0
-    Cons x xs -> 1 + length xs
+length Nil = 0
+length (Cons x xs) = 1 + length xs
 
 map :: (a -> b) -> List a -> List b
-map f list =
-  case list of
-    Nil -> Nil
-    Cons x xs -> Cons (f x) (map f xs)
+map _ Nil = Nil
+map f (Cons x xs) = Cons (f x) $ map f xs
 
-otherwise = True
+filter :: (a -> Bool) -> List a -> List a
+filter _ Nil = Nil
+filter pred (Cons x xs) = case pred x of
+  True -> Cons x $ filter pred xs
+  False -> filter pred xs
+
+head :: List a -> Maybe a
+head Nil = Nothing
+head (Cons x _) = Just x
+
+tail :: List a -> List a
+tail Nil = Nil
+tail (Cons _ xs) = xs
+
+last :: List a -> Maybe a
+last Nil = Nothing
+last (Cons x Nil) = Just x
+last (Cons x xs) = last xs
+
+init :: List a -> List a
+init Nil = Nil
+init (Cons x (Cons _ Nil)) = Cons x Nil
+init (Cons x xs) = Cons x $ init xs
+
+null :: List a -> Bool
+null Nil = True
+null (Cons _ _) = False
+
+take :: List a -> Int -> List a
+take list n =
+  case (n <= 0) of
+    True -> list
+    False -> case list of
+      Nil -> Nil
+      Cons x xs -> Cons x $ take (n - 1) xs
+
+drop :: List a -> Int -> List a
+drop list n =
+  case (n <= 0) of
+    True -> list
+    False -> case list of
+      Nil -> Nil
+      Cons x xs -> drop (n - 1) xs
+
+elem :: a -> List a -> Bool
+elem x Nil = False
+elem x (Cons y ys) = x == y || elem x ys
+
+notElem :: a -> List a -> Bool
+notElem x xs = not $ elem x xs
+
+seq :: a -> b -> b
+seq a b = case a of
+  _ -> b
+
+foldl' :: (b -> a -> b) -> b -> List a -> b
+foldl' _ acc Nil = acc
+foldl' f acc (Cons x xs) = seq acc $ foldl' f (f acc x) xs
+
+-- numbers
+add x y = x + y
+multiply x y = x * y
+
+sum :: Num a => List a -> a
+sum = foldl' add 0
+
+product :: Num a => List a -> a
+product = foldl' multiply 1
+
+pi = 3.14159265358979323864
+e = 2.71828182845904523536
+
+class Enum a where
+  succ :: a -> a
+  pred :: a -> a
+
+instance Enum Int where
+  succ x = x + 1
+  pred x = x - 1
+
+mod :: Int -> Int -> Int
+mod x y = x - y * x / y
+
+even :: Int -> Bool
+even n = mod n 2 == 0
+
+odd :: Int -> Bool
+odd = not . even

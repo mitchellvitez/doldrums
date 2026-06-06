@@ -14,7 +14,6 @@ import qualified Data.Text.IO as TIO
 import Test.Hspec
 import Control.Exception (try, SomeException)
 import System.Timeout (timeout)
-import System.CPUTime (getCPUTime)
 
 import System.Directory (listDirectory)
 import System.FilePath ((</>), takeExtension, dropExtension)
@@ -87,7 +86,7 @@ mkDolTest (TestProgram name _ IgnoreDirective) =
   xit (T.unpack name) pending
 mkDolTest (TestProgram name content BrokenDirective) =
   it (T.unpack name) $ do
-    result <- timeout 10_000_000 . try $ runTest content
+    result <- timeout 100_000 . try $ runTest content
     case result of
       Nothing -> expectationFailure "Timed out after 100ms"
       Just (Right _) -> expectationFailure "Expected an exception but program succeeded"
@@ -95,12 +94,10 @@ mkDolTest (TestProgram name content BrokenDirective) =
         TIO.putStrLn $ "  " <> T.pack (show e)
 mkDolTest (TestProgram name content (ExpectDirective expected)) =
   it (T.unpack name) $ do
-    start <- getCPUTime
-    output <- runTest content
-    end <- getCPUTime
-    let elapsed = fromIntegral (end - start) / (10 :: Double)^(12 :: Integer)
-    TIO.putStrLn $ "  [TIME] " <> T.pack (show elapsed) <> "s"
-    output `shouldBe` expected
+    result <- timeout 100_000 $ runTest content
+    case result of
+      Nothing -> expectationFailure "Timed out after 100ms"
+      Just output -> output `shouldBe` expected
 mkDolTest (TestProgram name _ MissingDirective) =
   it (T.unpack name) $
     expectationFailure $

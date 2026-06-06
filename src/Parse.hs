@@ -278,7 +278,8 @@ parsePattern =
   PatternVar <$> parseName <|>
   PatternWildcard <$ lexeme (char '_') <|>
   PatternLiteral <$> parseLiteral <|>
-  PatternConstructor <$> parseTag <*> many parsePattern
+  PatternConstructor <$> parseTag <*> many parsePattern <|>
+  between (lexeme $ char '(') (lexeme $ char ')') parsePattern
 
 parseCaseAlternative :: Parser (CaseAlternative ())
 parseCaseAlternative = do
@@ -349,7 +350,7 @@ parseTag = lexeme $ try $ do
   -- can't be a keyword due to first upperChar
 
 parseName :: Parser Name
-parseName = lexeme $ try $ do
+parseName = lexeme . try $ do
   first <- lowerChar
   rest <- many parseNameChar
   let name = T.pack (first : rest)
