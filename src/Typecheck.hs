@@ -200,7 +200,7 @@ typeCheckExpr _ (AnnExprLiteral _ (LiteralInt _)) =
   pure (emptySubstitution, TypeInt)
 typeCheckExpr _ (AnnExprLiteral _ (LiteralString _)) =
   pure (emptySubstitution, TypeString)
-typeCheckExpr _ (AnnExprLiteral _ (LiteralFloat _)) =
+typeCheckExpr _ (AnnExprLiteral _ (LiteralDouble _)) =
   pure (emptySubstitution, TypeDouble)
 typeCheckExpr env@(TypeEnv envMap) (AnnExprConstructor sourcePos tag _arity) =
   case Map.lookup (Name $ unTag tag) envMap of

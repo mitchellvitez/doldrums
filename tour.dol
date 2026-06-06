@@ -72,9 +72,9 @@ instance Equal Int where
 main :: String
 main =
   shout greeting <> "\n" <>
-  "fib(8) = " <> show (fib 8) <> "\n" <>
-  "fac(6) = " <> show (fac 6) <> "\n" <>
-  "6 * 7 = " <> show (6 * 7) <> "\n" <>
+  "fib 8 = " <> show (fib 8) <> "\n" <>
+  "fac 6 = " <> show (fac 6) <> "\n" <>
+  "6 * -7 = " <> show (6 * -7) <> "\n" <>
   "3.0 + 4.0 = " <> show (3.0 + 4.0) <> "\n" <>
   "myLength (MyCons 1 (MyCons 2 MyNil)) = " <> show (myLength (MyCons 1 (MyCons 2 MyNil))) <> "\n" <>
   "eq 0 0 = " <> show (eq 0 0) <> "\n" <>

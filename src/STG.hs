@@ -50,7 +50,7 @@ toStg :: Expr -> State Int StgExpr
 toStg e = case e of
   ExprLiteral (LiteralInt n) -> pure . StgAtom . StgAtomLit $ StgLitInt n
   ExprLiteral (LiteralString s) -> pure . StgAtom . StgAtomLit $ StgLitString s
-  ExprLiteral (LiteralFloat d) -> pure . StgAtom . StgAtomLit $ StgLitDouble d
+  ExprLiteral (LiteralDouble d) -> pure . StgAtom . StgAtomLit $ StgLitDouble d
   ExprVariable v -> pure . StgAtom . StgAtomVar $ unName v
   ExprConstructor tag _ -> pure . StgAtom . StgAtomVar $ unTag tag
   ExprLet bindings body -> do
@@ -95,7 +95,7 @@ atomize = \case
   ExprVariable v -> pure (StgAtomVar (unName v), [])
   ExprLiteral (LiteralInt n) -> pure (StgAtomLit (StgLitInt n), [])
   ExprLiteral (LiteralString s) -> pure (StgAtomLit (StgLitString s), [])
-  ExprLiteral (LiteralFloat d) -> pure (StgAtomLit (StgLitDouble d), [])
+  ExprLiteral (LiteralDouble d) -> pure (StgAtomLit (StgLitDouble d), [])
   ExprConstructor tag _ -> pure (StgAtomVar (unTag tag), [])
   e -> do
     name <- freshName

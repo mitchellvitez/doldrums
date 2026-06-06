@@ -39,16 +39,28 @@ parserSpec = describe "parsing" $ do
       testParser parseExprLiteral "99999999999999999999999" (ExprLiteral (LiteralInt 99999999999999999999999))
 
     it "parseDouble" $ do
-      testParser parseExprLiteral "3.14" (ExprLiteral (LiteralFloat 3.14))
-      testParser parseExprLiteral "0.15" (ExprLiteral (LiteralFloat 0.15))
+      testParser parseExprLiteral "3.14" (ExprLiteral (LiteralDouble 3.14))
+      testParser parseExprLiteral "0.15" (ExprLiteral (LiteralDouble 0.15))
 
-    -- TODO: negatives should act like Haskell's LexicalNegation extension is on
-    -- xit "parseNegativeInt" $ do
-    --   testParser parseExprLiteral "~42" (ExprLiteral (LiteralInt (-42)))
+    it "parseNegativeInt" $ do
+      testParser parseExprLiteral "-42" (ExprLiteral (LiteralInt (-42)))
+      testParser parseExprLiteral "-0" (ExprLiteral (LiteralInt 0))
 
-    -- xit "parseNegativeDouble" $ do
-    --   testParser parseExprLiteral "-3.14" (ExprLiteral (LiteralFloat (-3.14)))
-    --   testParser parseExprLiteral "-0.15" (ExprLiteral (LiteralFloat (-0.15)))
+    it "parseNegativeDouble" $ do
+      testParser parseExprLiteral "-3.14" (ExprLiteral (LiteralDouble (-3.14)))
+      testParser parseExprLiteral "-0.15" (ExprLiteral (LiteralDouble (-0.15)))
+
+    it "rejects - with space as literal" $ do
+      testParserFail parseExprLiteral "- 7"
+      testParserFail parseExprLiteral "- 3.14"
+
+    it "parseExpr: f -7 is App f (-7), not subtraction" $ do
+      testParser parseExpr "f -7"
+        (ExprApplication (ExprVariable "f") (ExprLiteral (LiteralInt (-7))))
+
+    it "parseExpr: f - 7 is binary subtraction" $ do
+      testParser parseExpr "f - 7"
+        (ExprApplication (ExprApplication (ExprVariable "-") (ExprVariable "f")) (ExprLiteral (LiteralInt 7)))
 
     it "parseString" $ do
       testParser parseExprLiteral "\"hello\"" (ExprLiteral (LiteralString "hello"))

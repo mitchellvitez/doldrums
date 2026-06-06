@@ -40,6 +40,12 @@ main = hspec $ do
     files <- runIO $ discoverDolFiles "test/broken"
     mapM_ mkDolTest files
 
+  -- sanity check that the "tour.dol" program is compiling
+  describe "tour" $
+    it "compiles tour.dol" $ do
+      content <- TIO.readFile "tour.dol"
+      void $ runTest content
+
 data TestDirective
   = ExpectDirective Text
   | IgnoreDirective

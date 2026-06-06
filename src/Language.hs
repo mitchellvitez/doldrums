@@ -163,7 +163,7 @@ newtype Arity = Arity { unArity :: Int }
 data Literal
   = LiteralInt Integer
   | LiteralString Text
-  | LiteralFloat Double
+  | LiteralDouble Double
   deriving (Eq, Show)
 
 data AnnotatedExpr a

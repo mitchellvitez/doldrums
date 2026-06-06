@@ -136,7 +136,7 @@ escapeQuotes = T.concatMap escape
 exprToGraphviz :: Set Name -> AnnotatedExpr Integer -> Text
 exprToGraphviz _ (AnnExprLiteral n (LiteralInt l)) = node n $ tshow l
 exprToGraphviz _ (AnnExprLiteral n (LiteralString s)) = node n $ escapeQuotes $ tshow s
-exprToGraphviz _ (AnnExprLiteral n (LiteralFloat d)) = node n $ tshow d
+exprToGraphviz _ (AnnExprLiteral n (LiteralDouble d)) = node n $ tshow d
 exprToGraphviz _ (AnnExprConstructor n (Tag t) a) =
   node n t
 exprToGraphviz functionNames (AnnExprVariable n v) =

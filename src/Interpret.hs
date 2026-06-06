@@ -56,7 +56,7 @@ typeHintToTags _ _ = []
 -- | get the type name tag from an evaluated value for method dispatch
 valueTypeTag :: Value -> DataTypeMap -> Name
 valueTypeTag (ValLiteral (LiteralInt _)) _ = Name "Int"
-valueTypeTag (ValLiteral (LiteralFloat _)) _ = Name "Double"
+valueTypeTag (ValLiteral (LiteralDouble _)) _ = Name "Double"
 valueTypeTag (ValLiteral (LiteralString _)) _ = Name "String"
 valueTypeTag (ValConstructor tag _) typeMap =
   case Map.lookup tag typeMap of
@@ -355,10 +355,10 @@ numBinOp intOp doubleOp a b = do
       case valB of
         ValLiteral (LiteralInt rawB) -> pure . ValLiteral . LiteralInt $ intOp rawA rawB
         _ -> throw $ RuntimeException "Type error in numeric operation"
-    ValLiteral (LiteralFloat rawA) -> do
+    ValLiteral (LiteralDouble rawA) -> do
       valB <- whnf b
       case valB of
-        ValLiteral (LiteralFloat rawB) -> pure . ValLiteral . LiteralFloat $ doubleOp rawA rawB
+        ValLiteral (LiteralDouble rawB) -> pure . ValLiteral . LiteralDouble $ doubleOp rawA rawB
         _ -> throw $ RuntimeException "Type error in numeric operation"
     _ -> throw $ RuntimeException "Type error in numeric operation"
 
@@ -379,7 +379,7 @@ comparePrim a b = do
     (ValLiteral (LiteralInt rawA), ValLiteral (LiteralInt rawB)) -> do
       let result = compare rawA rawB
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
-    (ValLiteral (LiteralFloat rawA), ValLiteral (LiteralFloat rawB)) -> do
+    (ValLiteral (LiteralDouble rawA), ValLiteral (LiteralDouble rawB)) -> do
       let result = compare rawA rawB
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
     (ValLiteral (LiteralString rawA), ValLiteral (LiteralString rawB)) -> do
@@ -396,7 +396,7 @@ showPrim a = do
 unpackValue :: Value -> State EvalState Text
 unpackValue (ValLiteral (LiteralInt n)) = pure $ tshow n
 unpackValue (ValLiteral (LiteralString s)) = pure s
-unpackValue (ValLiteral (LiteralFloat f)) = pure $ tshow f
+unpackValue (ValLiteral (LiteralDouble f)) = pure $ tshow f
 unpackValue (ValConstructor tag (Arity 0)) = pure $ unTag tag
 unpackValue (ValConstructor tag _) = pure $ "<partially applied " <> unTag tag <> ">"
 unpackValue (ValClosure _ _ _) = pure "<function>"

@@ -224,7 +224,7 @@ prefixOpAST name expr = ExprApplication (ExprVariable (Name name)) expr
 
 parseLiteral :: Parser Literal
 parseLiteral =
-  try (LiteralFloat <$> parseDouble) <|>
+  try (LiteralDouble <$> parseDouble) <|>
   LiteralInt <$> parseInt            <|>
   LiteralString <$> parseString
 
@@ -316,11 +316,19 @@ parseExprParenthesized = do
   lexeme $ char ')'
   pure body
 
-parseInt :: Integral i => Parser i
-parseInt = lexeme L.decimal
+parseNumber :: Num a => Parser a -> Parser a
+parseNumber parseUnsigned = lexeme . try $ do
+  sign <- optional . try $ char '-' <* lookAhead digitChar
+  n <- parseUnsigned
+  pure $ case sign of
+    Just _ -> -n
+    Nothing -> n
+
+parseInt :: Parser Integer
+parseInt = parseNumber L.decimal
 
 parseDouble :: Parser Double
-parseDouble = lexeme L.float
+parseDouble = parseNumber L.float
 
 parseString :: Parser Text
 parseString = lexeme $ char '"' >> T.pack <$> manyTill L.charLiteral (char '"')
@@ -401,7 +409,6 @@ parseTypeHintAtomic :: Parser TypeHint
 parseTypeHintAtomic =
   typeHintLiteral "Int" TypeHintInt <|>
   typeHintLiteral "Double" TypeHintDouble <|>
-  typeHintLiteral "Float" TypeHintDouble <|>
   typeHintLiteral "String" TypeHintString <|>
   try (TypeHintVar <$> parseName) <|>
   try (TypeHintConstructor . DataType . unTag <$> parseTag) <|>
