@@ -7,7 +7,6 @@ where
 
 import Language
 import Graphviz
-import LLVM (compileAndRun)
 import Parse (parseProgram)
 import Typecheck
 import FixAst (fixAst)
@@ -18,7 +17,7 @@ import qualified Data.Text as Text
 import Control.Monad (when)
 import qualified Data.Map as Map
 import Text.Megaparsec (parse, errorBundlePretty)
-import System.Directory (doesFileExist)
+import System.Directory ()
 
 putTextLn :: Text -> IO ()
 putTextLn = putStrLn . unpack
@@ -74,11 +73,10 @@ execute programText strat debugFlag compileFlag = do
           debug debugFlag "OUTPUT" $ pure ()
           case compileFlag of
             Compiled -> do
-              runtimeExists <- doesFileExist "runtime/runtime.c"
-              let runtimePath = if runtimeExists then "runtime/runtime.c"
-                                else error "runtime/runtime.c not found"
-              result <- compileAndRun stgExpr runtimePath
-              strat result
+              error "Compilation to LLVM IR is still a work in progress"
+              -- TODO: create a runtime and do LLVM IR generation
+              -- result <- compileAndRun stgExpr runtimePath
+              -- strat result
 
             Interpreted -> do
               let
