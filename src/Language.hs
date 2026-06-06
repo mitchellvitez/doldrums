@@ -7,6 +7,8 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module Language
   ( module Language
@@ -19,21 +21,33 @@ import Data.Text (Text, unpack)
 import Text.Megaparsec (SourcePos)
 
 data Program a = Program
+  -- f x = x + 1
   { functions :: [Function a]
+  -- data Maybe a = Nothing | Just a
   , dataDeclarations :: [DataDeclaration]
+  -- x :: Int -> a -> Bool
   , typeSignatures :: [(Name, TypeHint)]
+  -- class Show a where
+  --   show :: a -> String
+  , typeclassDeclarations :: [TypeclassDeclaration]
+  -- instance Show a => Show (Maybe a) where
+  --   show Nothing = "Nothing" ...
+  , instanceDeclarations :: [InstanceDeclaration a]
   }
   deriving Eq
 deriving instance Show (Program SourcePos)
-
-instance Show (Program ()) where
-  show (Program funcs decls sigs) = "data declarations: " <> show decls <> "\n" <> intercalate "\n" (map show funcs) <> "\n" <> show sigs
+deriving instance Show (Program ())
 
 instance Semigroup (Program a) where
-  Program f1 d1 s1 <> Program f2 d2 s2 = Program (f1 <> f2) (d1 <> d2) (s1 <> s2)
+  Program f1 d1 s1 t1 i1 <> Program f2 d2 s2 t2 i2 =
+    Program (f1 <> f2) (d1 <> d2) (s1 <> s2) (t1 <> t2) (i1 <> i2)
 
+-- Functor instance maps over the annotations
 instance Functor Program where
-  fmap f (Program funcs datas sigs) = Program (fmap f <$> funcs) datas sigs
+  fmap f program@Program{..} = program
+    { functions = fmap f <$> functions
+    , instanceDeclarations = fmap f <$> instanceDeclarations
+    }
 
 data DataDeclaration = DataDeclaration
   -- ... = [Nothing :: Maybe a, Just :: a -> Maybe a]
@@ -52,6 +66,32 @@ data TypeRef
   | TypeRefApp DataType [TypeRef]
   deriving (Eq, Show)
 
+-- class Eq a where
+--   (==) :: a -> a -> Bool
+data TypeclassDeclaration = TypeclassDeclaration
+  -- Eq
+  { typeclassName :: Name
+  -- a
+  , typeclassParameter :: Name
+  -- (==) :: a -> a -> Bool
+  , typeclassMethods :: [(Name, TypeHint)]
+  } deriving (Eq, Show)
+
+-- instance Show a => Show (Maybe a) where
+--   show Nothing = "Nothing" ...
+data InstanceDeclaration a = InstanceDeclaration
+  -- Show a =>
+  { instanceContext :: [(Name, TypeHint)]
+  -- Show
+  , instanceClass :: Name
+  -- Maybe a
+  , instanceTypes :: [TypeHint]
+  -- show Nothing = "Nothing"
+  , instanceMethods :: [(Name, AnnotatedExpr a)]
+  } deriving (Eq, Functor)
+deriving instance Show (InstanceDeclaration SourcePos)
+deriving instance Show (InstanceDeclaration ())
+
 -- a type the user wrote down
 data TypeHint
   = TypeHintInt
@@ -60,7 +100,8 @@ data TypeHint
   | TypeHintVar Name
   | TypeHintConstructor DataType
   | TypeHintApp DataType [TypeHint]
-  | TypeHintArrow TypeHint TypeHint
+  | TypeHint :~> TypeHint
+  | TypeHintConstraint [(Name, TypeHint)] TypeHint
   deriving (Eq, Show)
 
 -- name, list of arguments, body
@@ -137,11 +178,11 @@ data AnnotatedExpr a
 deriving instance Show (AnnotatedExpr SourcePos)
 
 annotation :: AnnotatedExpr a -> a
-annotation (AnnExprLiteral annot _)           = annot
+annotation (AnnExprLiteral annot _)       = annot
 annotation (AnnExprVariable annot _)      = annot
 annotation (AnnExprApplication annot _ _) = annot
 annotation (AnnExprConstructor annot _ _) = annot
-annotation (AnnExprLet annot _ _)       = annot
+annotation (AnnExprLet annot _ _)         = annot
 annotation (AnnExprLambda annot _ _)      = annot
 annotation (AnnExprCase annot _ _)        = annot
 

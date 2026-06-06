@@ -1,0 +1,13 @@
+-- EXPECT 3
+
+data Seq a = Emp | Snoc a (Seq a)
+
+class Size a where
+  size :: a -> Int
+
+instance Size (Seq Int) where
+  size xs = case xs of
+    Emp -> 0
+    Snoc x rest -> 1 + size rest
+
+main = size (Snoc 1 (Snoc 2 (Snoc 3 Emp)))

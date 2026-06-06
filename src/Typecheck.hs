@@ -13,7 +13,7 @@ where
 import Language
 import FixAst (singleExprForm)
 
-import Control.Monad (foldM, forM, when)
+import Control.Monad (foldM, forM, forM_, when)
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -48,15 +48,24 @@ class Types a where
   freeTypeVariable :: a -> Set Name
   apply :: Substitution -> a -> a
 
+data Constraint = Constraint Name Type
+  deriving (Eq, Show, Generic)
+
+instance Types Constraint where
+  freeTypeVariable (Constraint _ t) = freeTypeVariable t
+  apply subs (Constraint n t) = Constraint n $ apply subs t
+
 -- used for finding type variable replacements / generalization
 -- `forall a. a -> String`
 -- is the same as
--- `Scheme [Name "a"] (TypeVariable (Name "a") :-> TypeString)`
-data Scheme = Scheme [Name] Type
+-- `Scheme [Name "a"] [] (TypeVariable (Name "a") :-> TypeString)`
+data Scheme = Scheme [Name] [Constraint] Type
 
 instance Types Scheme where
-  freeTypeVariable (Scheme vars t) = freeTypeVariable t Set.\\ Set.fromList vars
-  apply subs (Scheme vars t) = Scheme vars $ apply (foldr Map.delete subs vars) t
+  freeTypeVariable (Scheme vars constraints t) =
+    (freeTypeVariable t <> foldMap freeTypeVariable constraints) Set.\\ Set.fromList vars
+  apply subs (Scheme vars constraints t) =
+    Scheme vars (apply subs constraints) $ apply (foldr Map.delete subs vars) t
 
 -- map from variables to their types, for substituting
 type Substitution = Map Name Type
@@ -80,7 +89,7 @@ remove :: TypeEnv -> Name -> TypeEnv
 remove (TypeEnv env) var = TypeEnv $ Map.delete var env
 
 generalize :: TypeEnv -> Type -> Scheme
-generalize env t = Scheme vars t
+generalize env t = Scheme vars [] t
   where vars = Set.toList $ freeTypeVariable t Set.\\ freeTypeVariable env
 
 instance Types TypeEnv where
@@ -111,11 +120,13 @@ instance Exception TypeCheckingException
 
 data TypeInstantiationEnv = TypeInstantiationEnv
   { signatureMap :: Map Name Scheme
+  , instanceMap :: Map Name [Type]
   }
 
 data TypeInstantiationState = TypeInstantiationState
   { typeInstantiationSupply :: Int
   , typeInstantiationSubstitution :: Substitution
+  , typeConstraints :: [Constraint]
   }
   deriving Show
 
@@ -123,15 +134,19 @@ data TypeInstantiationState = TypeInstantiationState
 type TypeInstantiation a =
   ExceptT Text (ReaderT TypeInstantiationEnv (StateT TypeInstantiationState IO)) a
 
-runTypeInstantiation :: Map Name Scheme -> TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
-runTypeInstantiation sigs t = do
+runTypeInstantiation :: Map Name Scheme -> Map Name [Type] -> TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
+runTypeInstantiation signatures instances t = do
   runStateT (runReaderT (runExceptT t) env) initialTypeInstantiationState
   where
-    env = TypeInstantiationEnv { signatureMap = sigs }
+    env = TypeInstantiationEnv { signatureMap = signatures, instanceMap = instances }
     initialTypeInstantiationState = TypeInstantiationState
       { typeInstantiationSupply = 0
       , typeInstantiationSubstitution = Map.empty
+      , typeConstraints = []
       }
+
+addConstraints :: [Constraint] -> TypeInstantiation ()
+addConstraints cs = modify $ \s -> s { typeConstraints = typeConstraints s <> cs }
 
 newTypeVar :: Text -> TypeInstantiation Type
 newTypeVar prefix = do
@@ -139,11 +154,11 @@ newTypeVar prefix = do
   put state { typeInstantiationSupply = typeInstantiationSupply state + 1 }
   pure . TypeVariable . Name $ prefix <> (tshow $ typeInstantiationSupply state)
 
-instantiate :: Scheme -> TypeInstantiation Type
-instantiate (Scheme vars t) = do
+instantiate :: Scheme -> TypeInstantiation (Type, [Constraint])
+instantiate (Scheme vars constraints t) = do
   newVars <- mapM (const $ newTypeVar "a") vars
   let subs = Map.fromList $ zip vars newVars
-  pure $ apply subs t
+  pure (apply subs t, apply subs constraints)
 
 unify :: SourcePos -> Type -> Type -> TypeInstantiation Substitution
 unify sourcePos (a1 :-> b1) (a2 :-> b2) = do
@@ -190,7 +205,8 @@ typeCheckExpr _ (AnnExprLiteral _ (LiteralFloat _)) =
 typeCheckExpr env@(TypeEnv envMap) (AnnExprConstructor sourcePos tag _arity) =
   case Map.lookup (Name $ unTag tag) envMap of
     Just scheme -> do
-      instantiatedType <- instantiate scheme
+      (instantiatedType, constraints) <- instantiate scheme
+      addConstraints constraints
       pure (emptySubstitution, instantiatedType)
     Nothing -> do
       ty <- newTypeVar "a"
@@ -200,13 +216,14 @@ typeCheckExpr (TypeEnv env) (AnnExprVariable sourcePos name) =
     Nothing -> do
       ty <- newTypeVar "a"
       pure (emptySubstitution, ty)
-    Just ty -> do
-      instantiatedType <- instantiate ty
+    Just scheme -> do
+      (instantiatedType, constraints) <- instantiate scheme
+      addConstraints constraints
       pure (emptySubstitution, instantiatedType)
 typeCheckExpr env (AnnExprLambda _ name expr) = do
   typeVar <- newTypeVar "a"
   let TypeEnv env1 = remove env name
-      env2 = TypeEnv $ env1 `Map.union` Map.singleton name (Scheme [] typeVar)
+      env2 = TypeEnv $ env1 `Map.union` Map.singleton name (Scheme [] [] typeVar)
   (subs1, type1) <- typeCheckExpr env2 expr
   pure $ (subs1, apply subs1 typeVar :-> type1)
 typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
@@ -217,7 +234,7 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
   pure (subs3 `combineSubstitutions` subs2 `combineSubstitutions` subs1, apply subs3 typeVar)
 typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
   sigMap <- asks signatureMap
-  newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] var)) $ map fst bindings
+  newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] [] var)) $ map fst bindings
   let env = oldEnv <> TypeEnv (Map.fromList newVars)
   ty <- newTypeVar "a"
   foldM (foldStep sigMap env) (emptySubstitution, ty) bindings
@@ -226,7 +243,8 @@ typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
       (subs1, type1) <- typeCheckExpr env expr1
       subsSig <- case Map.lookup name sigMap of
         Just sigScheme -> do
-          sigType <- instantiate sigScheme
+          (sigType, sigConstraints) <- instantiate sigScheme
+          addConstraints sigConstraints
           unify sourcePos (apply subs1 type1) sigType
         Nothing -> pure emptySubstitution
       let subs1' = subsSig `combineSubstitutions` subs1
@@ -256,10 +274,31 @@ typeCheckExpr env (AnnExprCase sourcePos expr alts) = do
       newSubs <- unify sourcePos t1 t2
       pure (newSubs, t1)
 
-infer :: Map Name Scheme -> AnnotatedExpr SourcePos -> TypeInstantiation Type
+infer :: Map Name Scheme -> AnnotatedExpr SourcePos -> TypeInstantiation (Type, Substitution, [Constraint])
 infer env expr = do
   (subs, type_) <- typeCheckExpr (TypeEnv env) expr
-  pure $ apply subs type_
+  constraints <- gets typeConstraints
+  pure (apply subs type_, subs, constraints)
+
+buildInstanceMap :: Program a -> Map Name [Type]
+buildInstanceMap program =
+  Map.fromListWith (<>) $
+    [ (instanceClass inst, [typeHintToType typ])
+    | inst <- instanceDeclarations program
+    , typ <- instanceTypes inst
+    ]
+
+solveConstraints :: Substitution -> [Constraint] -> TypeInstantiation ()
+solveConstraints subs constraints = do
+  instances <- asks instanceMap
+  let resolved = map (\(Constraint name typ) -> (name, apply subs typ)) constraints
+  forM_ resolved $ \(name, typ) ->
+    case Map.lookup name instances of
+      Nothing -> throwError $ "No instances for " <> tshow name <> " " <> tshow typ
+      Just candidates ->
+        if typ `elem` candidates
+        then pure ()
+        else throwError $ "No instance for " <> tshow name <> " " <> tshow typ
 
 typecheckingFailureHandler :: Text -> TypeCheckingException -> IO (Either Text Type, TypeInstantiationState)
 typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = do
@@ -288,43 +327,56 @@ typeHintToType = \case
   TypeHintVar n -> TypeVariable n
   TypeHintConstructor dt -> TypeTagged dt
   TypeHintApp dt _ -> TypeTagged dt
-  TypeHintArrow a b -> typeHintToType a :-> typeHintToType b
+  a :~> b -> typeHintToType a :-> typeHintToType b
+  TypeHintConstraint _ body -> typeHintToType body
 
 typeHintFreeVars :: TypeHint -> [Name]
 typeHintFreeVars = \case
   TypeHintVar n -> [n]
-  TypeHintArrow a b -> typeHintFreeVars a <> typeHintFreeVars b
+  a :~> b -> typeHintFreeVars a <> typeHintFreeVars b
   TypeHintApp _ args -> concatMap typeHintFreeVars args
+  TypeHintConstraint constraints body ->
+    concatMap (typeHintFreeVars . snd) constraints <> typeHintFreeVars body
   _ -> []
+
+typeHintToScheme :: TypeHint -> Scheme
+typeHintToScheme (TypeHintConstraint constraints body) =
+  Scheme vars (map (\(cn, arg) -> Constraint cn (typeHintToType arg)) constraints) (typeHintToType body)
+  where
+    usedVars = typeHintFreeVars body <> concatMap (typeHintFreeVars . snd) constraints
+    vars = Set.toList $ Set.fromList usedVars
+typeHintToScheme hint =
+  Scheme (typeHintFreeVars hint) [] (typeHintToType hint)
 
 typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInference program programText = do
-  -- convert to single-expression form (all top-level functions become lets in main) then typecheck
-  (runTypeInstantiation sigSchemes . infer initialEnvironment $ singleExprForm program)
+  (runTypeInstantiation sigSchemes insts $ do
+    (typ, subs, constraints) <- infer initialEnvironment $ singleExprForm program
+    solveConstraints subs constraints
+    pure typ)
     `catch` typecheckingFailureHandler programText
   where
-    sigSchemes = Map.fromList
-      [ (name, Scheme (typeHintFreeVars st) (typeHintToType st))
-      | (name, st) <- typeSignatures program
-      ]
+    sigSchemes = Map.fromList . map (fmap typeHintToScheme) $ typeSignatures program
+    insts = buildInstanceMap program
     initialEnvironment :: Map Name Scheme
     initialEnvironment =
       sigSchemes <>
       Map.fromList (initialFunctionTypes program 1)
 
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Scheme)]
-    initialFunctionTypes (Program [] [] _) _ = []
-    initialFunctionTypes (Program (Function _ name args body : restFuncs) datas sigs) n =
-      (name, Scheme [] $ functionType n (Arity $ length args) Nothing) : initialFunctionTypes (Program restFuncs datas sigs) (n+1)
-    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas) sigs) n =
-      initialFunctionTypes (Program funcs restDatas sigs) n
-    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas) sigs) n =
+    initialFunctionTypes (Program [] [] _ _ _) _ = []
+    initialFunctionTypes (Program (Function _ name args body : restFuncs) datas sigs cls insts) n =
+      (name, Scheme [] [] $ functionType n (Arity $ length args) Nothing)
+        : initialFunctionTypes (Program restFuncs datas sigs cls insts) (n+1)
+    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas) sigs cls insts) n =
+      initialFunctionTypes (Program funcs restDatas sigs cls insts) n
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas) sigs cls insts) n =
       (Name $ unTag x, constructorScheme typeParams typeRefs dataTy)
-      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas) sigs) (n+1)
+      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas) sigs cls insts) (n+1)
 
     constructorScheme :: [Name] -> [TypeRef] -> DataType -> Scheme
     constructorScheme typeParams typeRefs dataTy =
-      Scheme schemeVars $ foldr refToFn (TypeTagged dataTy) typeRefs
+      Scheme schemeVars [] $ foldr refToFn (TypeTagged dataTy) typeRefs
       where
         schemeVars = typeParams <> [n | TypeRefVar n <- typeRefs]
         refToFn :: TypeRef -> Type -> Type

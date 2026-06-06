@@ -1,0 +1,18 @@
+-- EXPECT 12
+
+class Add a where
+  add :: a -> a -> a
+
+instance Add Int where
+  add x y = x + y
+
+class Mul a where
+  mul :: a -> a -> a
+
+instance Mul Int where
+  mul x y = x * y
+
+calc :: (Add a, Mul a) => a -> a
+calc x = add (mul x x) x
+
+main = calc 3

@@ -1,4 +1,6 @@
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module FixAst
   ( fixAst
@@ -7,41 +9,40 @@ module FixAst
 where
 
 import Language
-import Data.List (foldl')
+import Data.List
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 
 fixAst :: Program a -> Program a
-fixAst =
-  desugarProgram .
-  fixArities .
-  checkUniqueness
+fixAst = desugarProgram . fixArities . checkUniqueness
 
--- convert Program to a single Expr (`let topLevelExpr = ... in main`)
+-- convert Program to a single Expr (`let topLevelFunction = ... in main`)
 singleExprForm :: Program a -> AnnotatedExpr a
-singleExprForm program@(Program funcs _ _) =
-  foldl' toSingle (getMainExpr program) (filter (\(Function _ name _ _) -> name /= Name "main") funcs)
+singleExprForm program =
+  case partition (\f -> f.name == Name "main") program.functions of
+    ([], _) -> error "Couldn't find `main` function"
+    ([main], otherFunctions) -> foldl' toSingle main.body otherFunctions
+    _ -> error "two or more `main` functions exist"
 
-  where
-    toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
-    toSingle expr func = AnnExprLet (annotation expr) [(name func, toNestedLambdas func)] expr
+toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
+toSingle expr func = AnnExprLet (annotation expr) [(name func, toNestedLambdas func)] expr
 
-    toNestedLambdas :: Function a -> AnnotatedExpr a
-    toNestedLambdas (Function annot name args body) =
-      foldr (AnnExprLambda annot) body args
-
-    getMainExpr :: Program a -> AnnotatedExpr a
-    getMainExpr (Program [] _ _) = error "Couldn't find main"
-    getMainExpr (Program (Function _ name _ body : restFuncs) datas sigs) = case name of
-      Name "main" -> body
-      _ -> getMainExpr $ Program restFuncs datas sigs
-
+toNestedLambdas :: Function a -> AnnotatedExpr a
+toNestedLambdas (Function annot name args body) =
+  foldr (AnnExprLambda annot) body args
 
 -- FIX ARITIES --
 
 fixArities :: Program a -> Program a
-fixArities (Program funcs datas sigs) = Program (map (fixFunctionArities datas) funcs) datas sigs
+fixArities program@Program{..} = program
+  { functions = map (fixFunctionArities dataDeclarations) functions
+  , instanceDeclarations = map (fixInstanceArities dataDeclarations) instanceDeclarations
+  }
+
+fixInstanceArities :: [DataDeclaration] -> InstanceDeclaration a -> InstanceDeclaration a
+fixInstanceArities datas (InstanceDeclaration ctx cls ty meths) =
+  InstanceDeclaration ctx cls ty [(n, fixExprArities datas m) | (n, m) <- meths]
 
 fixFunctionArities :: [DataDeclaration] -> Function a -> Function a
 fixFunctionArities datas f@(Function _ _ _ body) =
@@ -72,13 +73,13 @@ checkUniqueness :: Program a -> Program a
 checkUniqueness = checkUniqueConstructors . checkUniqueFunctions
 
 checkUniqueFunctions :: Program a -> Program a
-checkUniqueFunctions program@(Program funcs datas _) =
+checkUniqueFunctions program@(Program funcs datas _ _ _) =
   case findDuplicate Set.empty $ map name funcs of
     Nothing -> program
     Just (Name name) -> error $ "Duplicate function: " <> Text.unpack name
 
 checkUniqueConstructors :: Program a -> Program a
-checkUniqueConstructors program@(Program funcs datas _) =
+checkUniqueConstructors program@(Program funcs datas _ _ _) =
   case findDuplicate Set.empty . map fst $ concatMap declarations datas of
     Nothing -> program
     Just (Tag tag) -> error $ "Duplicate constructor: " <> Text.unpack tag
@@ -144,11 +145,15 @@ exprFalse ann = AnnExprConstructor ann (Tag "False") (Arity 0)
 exprTrue ann = AnnExprConstructor ann (Tag "True") (Arity 0)
 
 desugarProgram :: Program a -> Program a
-desugarProgram (Program funcs decls sigs) =
-  Program (map desugarFunction funcs) decls sigs
+desugarProgram (Program funcs decls sigs cls insts) =
+  Program (map desugarFunction funcs) decls sigs cls (map desugarInstance insts)
 
 desugarFunction :: Function a -> Function a
 desugarFunction f = f { body = desugarExpr $ body f }
+
+desugarInstance :: InstanceDeclaration a -> InstanceDeclaration a
+desugarInstance (InstanceDeclaration ctx cls ty meths) =
+  InstanceDeclaration ctx cls ty [(n, desugarExpr m) | (n, m) <- meths]
 
 desugarExpr :: AnnotatedExpr a -> AnnotatedExpr a
 desugarExpr expr =

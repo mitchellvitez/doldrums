@@ -1,0 +1,12 @@
+-- EXPECT 43
+
+class HasVal a where
+  val :: a -> Int
+
+instance HasVal Int where
+  val x = x
+
+instance HasVal Bool where
+  val x = 42
+
+main = val 1 + val True

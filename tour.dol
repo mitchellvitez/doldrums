@@ -55,11 +55,19 @@ shout = compose (\s -> s <> "!") (\s -> s <> "!")
 -- `show` converts values to string
 -- `<>` concatenates strings
 describeNumber :: Double -> String
-describeNumber x = show 7 <> show " is a number and so is " <> show x
+describeNumber x = show 7 <> show " is (Num, Show) and so is " <> show x
+
+-- typeclasses and instances
+class Equal a where
+  eq :: a -> a -> Bool
+
+instance Equal Int where
+  eq x y = x == y
 
 -- other operators:
--- +, -, *, /, +., -., *., /., ==, /=,
--- <, >, <=, >=, &&, ||, ~, !, $
+-- +, -, *, /,
+-- ==, /=, <, >, <=, >=,
+-- &&, ||, $, .
 
 main :: String
 main =
@@ -67,6 +75,7 @@ main =
   "fib(8) = " <> show (fib 8) <> "\n" <>
   "fac(6) = " <> show (fac 6) <> "\n" <>
   "6 * 7 = " <> show (6 * 7) <> "\n" <>
-  "3.0 +. 4.0 = " <> show (3.0 +. 4.0) <> "\n" <>
+  "3.0 + 4.0 = " <> show (3.0 + 4.0) <> "\n" <>
   "myLength (MyCons 1 (MyCons 2 MyNil)) = " <> show (myLength (MyCons 1 (MyCons 2 MyNil))) <> "\n" <>
+  "eq 0 0 = " <> show (eq 0 0) <> "\n" <>
   describeNumber 8.0

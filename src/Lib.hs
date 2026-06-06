@@ -10,11 +10,10 @@ import Graphviz
 import Parse (parseProgram)
 import Typecheck
 import FixAst (fixAst)
-import Interpret (interpret)
-import STG (compileStg, StgExpr)
+import Interpret (interpret, methodEnvFromInstances)
+import STG (compileStg)
 import Data.Text (Text, pack, unpack)
 import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
 import Control.Monad (when)
 import System.Environment (getArgs)
 import qualified Data.Map as Map
@@ -55,16 +54,18 @@ debug isDebug label action = when isDebug $ do
 runBase :: Text -> (Text -> IO a) -> Bool -> IO a
 runBase programText strat isDebug = do
   preludeFile <- readFile "src/Prelude.dol"
+
   case parse parseProgram "" (pack preludeFile) of
     Left e -> error $ errorBundlePretty e
     Right prelude -> do
+
 
       debug isDebug "INPUT" . mapM_ putTextLn $ Text.lines programText
 
       case parse parseProgram "" programText of
         Left e -> error $ errorBundlePretty e
         Right unnormalizedBadAritiesProgram -> do
-          let program = fixAst (prelude <> unnormalizedBadAritiesProgram)
+          let program = fixAst $ prelude <> unnormalizedBadAritiesProgram
 
           debug isDebug "AST" . print $ const () <$> program
           debug isDebug "GRAPHVIZ" . putTextLn . toGraphviz $ const () <$> program
@@ -85,12 +86,23 @@ runBase programText strat isDebug = do
                 bigger = length stgExprStr > charLimit
             when bigger $
               putStrLn "[Showing first 1000 characters only]"
-            putStrLn $ take charLimit stgExprStr <> if bigger then "\n[...plus " <> show (length stgExprStr - charLimit) <> " more characters]" else ""
+            putStrLn $ take charLimit stgExprStr
+            when bigger $
+              putStrLn $ "[...plus " <> show (length stgExprStr - charLimit) <> " more characters]"
 
           debug isDebug "OUTPUT" $ pure ()
           let
               toLambdaBinding (Function _ name args body) = (name, foldr ExprLambda body args)
-              topLevelBindings = map toLambdaBinding . functions $ fmap (const ()) program
+              prog = fmap (const ()) program
+              topLevelBindings =
+                map toLambdaBinding (functions prog)
               mainExpr = ExprVariable "main"
-              result = interpret topLevelBindings mainExpr
+              typeMap = Map.fromList
+                [ (tag, Name $ unDataType dt)
+                | dtDecl <- dataDeclarations prog
+                , let dt = dataType dtDecl
+                , (tag, _) <- declarations dtDecl
+                ]
+              methodEnv = methodEnvFromInstances (instanceDeclarations prog) typeMap
+              result = interpret topLevelBindings methodEnv typeMap mainExpr
           result `seq` strat result

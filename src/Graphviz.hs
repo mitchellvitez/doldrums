@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Graphviz
   ( toGraphviz
@@ -48,13 +49,16 @@ getNext :: State LabelState Integer
 getNext = modify (\(n, env) -> (n+1, env)) >> fst <$> get
 
 labelProgram :: Program () -> State LabelState (Program Integer)
-labelProgram (Program funcs datas sigs) = do
-  let functionNames = fmap name funcs
+labelProgram program@Program{..} = do
+  let functionNames = fmap name functions
       zipped = zip functionNames $ repeat (-1)
   put (0, Map.fromList zipped)
-  newFuncs <- mapM labelFunction funcs
-  newFuncs' <- mapM labelFunctionAndExprs newFuncs
-  pure $ Program newFuncs' datas sigs
+  labeledFuncs <- mapM labelFunction functions
+  labeledFuncsExprs <- mapM labelFunctionAndExprs labeledFuncs
+  pure $ program
+    { functions = labeledFuncsExprs
+    , instanceDeclarations = fmap (const 0) <$> instanceDeclarations
+    }
 
 labelFunction :: Function () -> State LabelState (Function Integer)
 labelFunction (Function annot name args body) = do
@@ -111,8 +115,8 @@ labelExpr (ExprCase scrutinee alts) = do
 labelExpr _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
 
 programToGraphviz :: Program Integer -> Text
-programToGraphviz (Program funcs datas _sigs) =
-  fold $ functionToGraphviz (Set.fromList $ fmap name funcs) <$> funcs
+programToGraphviz Program{..} =
+  fold $ functionToGraphviz (Set.fromList $ fmap name functions) <$> functions
 
 functionToGraphviz :: Set Name -> Function Integer -> Text
 functionToGraphviz functionNames (Function annot name args body) = fold

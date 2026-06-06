@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE NumericUnderscores #-}
 
 import Lib (runTest)
 import Parser (parserSpec)
@@ -12,6 +13,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Test.Hspec
 import Control.Exception (try, SomeException)
+import System.Timeout (timeout)
+import System.CPUTime (getCPUTime)
 
 import System.Directory (listDirectory)
 import System.FilePath ((</>), takeExtension, dropExtension)
@@ -78,14 +81,19 @@ mkDolTest (TestProgram name _ IgnoreDirective) =
   xit (T.unpack name) pending
 mkDolTest (TestProgram name content BrokenDirective) =
   it (T.unpack name) $ do
-    result <- try $ runTest content
+    result <- timeout 10_000_000 . try $ runTest content
     case result of
-      Right _ -> expectationFailure "Expected an exception but program succeeded"
-      Left (e :: SomeException) -> do
+      Nothing -> expectationFailure "Timed out after 100ms"
+      Just (Right _) -> expectationFailure "Expected an exception but program succeeded"
+      Just (Left (e :: SomeException)) -> do
         TIO.putStrLn $ "  " <> T.pack (show e)
 mkDolTest (TestProgram name content (ExpectDirective expected)) =
   it (T.unpack name) $ do
+    start <- getCPUTime
     output <- runTest content
+    end <- getCPUTime
+    let elapsed = fromIntegral (end - start) / 10^12 :: Double
+    TIO.putStrLn $ "  [TIME] " <> T.pack (show elapsed) <> "s"
     output `shouldBe` expected
 mkDolTest (TestProgram name _ MissingDirective) =
   it (T.unpack name) $

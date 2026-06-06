@@ -1,0 +1,9 @@
+-- EXPECT 42
+
+class MyClass a where
+  myMethod :: a -> Int
+
+instance MyClass Int where
+  myMethod x = x
+
+main = myMethod 42

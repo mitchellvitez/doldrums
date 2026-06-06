@@ -1,0 +1,15 @@
+-- EXPECT True
+
+data Color = Red | Green | Blue
+
+class Equal a where
+  eq :: a -> a -> Bool
+
+instance Equal Color where
+  eq c1 c2 = case c1 of
+    Red -> case c2 of
+      Red -> True
+      _ -> False
+    _ -> False
+
+main = eq Red Red

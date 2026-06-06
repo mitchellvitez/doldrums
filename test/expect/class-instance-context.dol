@@ -1,0 +1,16 @@
+-- EXPECT True
+
+class Equal a where
+  eq :: a -> a -> Bool
+
+instance Equal Int where
+  eq x y = x == y
+
+data Pair a = MkPair a a
+
+instance Equal a => Equal (Pair a) where
+  eq p1 p2 = case p1 of
+    MkPair x y -> case p2 of
+      MkPair u v -> eq x u && eq y v
+
+main = eq (MkPair 1 2) (MkPair 1 2)

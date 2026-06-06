@@ -12,30 +12,51 @@ data Either a b = Left a | Right b
 
 data List a = Nil | Cons a (List a)
 
+class Eq a where
+  (==) :: a -> a -> Bool
+  (/=) :: a -> a -> Bool
+
+class Show a where
+  show :: a -> String
+
+class Num a where
+  (+) :: a -> a -> a
+  (-) :: a -> a -> a
+  (*) :: a -> a -> a
+  (/) :: a -> a -> a
+  negate :: a -> a
+
+class Ord a where
+  compare :: a -> a -> Ordering
+  (>) :: a -> a -> Bool
+  (<) :: a -> a -> Bool
+  (>=) :: a -> a -> Bool
+  (<=) :: a -> a -> Bool
+
+class Semigroup a where
+  (<>) :: a -> a -> a
+
+class Monoid a where
+  mempty :: a
+
+-- TODO: FAM
+-- class Functor f where
+--   (<$>) :: (a -> b) -> f a -> f b
+--   fmap :: (a -> b) -> f a -> f b
+--
+-- class Functor f => Applicative f where
+--   pure :: a -> f a
+--   (<*>) :: f (a -> b) -> f a -> f b
+
+-- class Applicative m => Monad m where
+--   (>>=) :: m a -> (a -> m b) -> m b
+
 -- standalone type signatures for built-ins
-(+) :: Int -> Int -> Int
-(+.) :: Double -> Double -> Double
-(*) :: Int -> Int -> Int
-(*.) :: Double -> Double -> Double
-(-) :: Int -> Int -> Int
-(-.) :: Double -> Double -> Double
-(/) :: Int -> Int -> Int
-(/.) :: Double -> Double -> Double
-(~) :: a -> a
-(!) :: Bool -> Bool
-(==) :: a -> a -> Bool
-(/=) :: a -> a -> Bool
-(<) :: a -> a -> Bool
-(>) :: a -> a -> Bool
-(<=) :: a -> a -> Bool
-(>=) :: a -> a -> Bool
+($) :: (a -> b) -> a -> b
 (&&) :: Bool -> Bool -> Bool
 (||) :: Bool -> Bool -> Bool
-(<>) :: String -> String -> String
-($) :: (a -> b) -> a -> b
-compare :: a -> a -> Ordering
-show :: a -> String
 
+-- TODO: haskell-style ternary keywords
 if :: Bool -> a -> a -> a
 if cond then else =
   case cond of
@@ -55,7 +76,7 @@ xor :: Bool -> Bool -> Bool
 xor x y = if x (not y) y
 
 negate :: a -> a
-negate x = ~x
+negate x = 0 - x
 
 id :: a -> a
 id x = x

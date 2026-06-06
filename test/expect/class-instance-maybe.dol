@@ -1,0 +1,11 @@
+-- EXPECT Some 7
+
+data Opt a = None | Some a
+
+class Wrap a where
+  wrap :: a -> Opt a
+
+instance Wrap Int where
+  wrap x = Some x
+
+main = wrap 7

@@ -3,6 +3,7 @@
 
 module Interpret
   ( interpret
+  , methodEnvFromInstances
   )
 where
 
@@ -23,11 +24,54 @@ import qualified Data.IntMap as IntMap
 -- | variable names map to thunks
 type Env = Map Name ThunkId
 
+-- method dispatch environment: method name -> (type tag -> instance body)
+-- runtime type-based dispatch of typeclass methods.
+-- type tags are "Int", "Double", "String", or DataType names (e.g. "Bool", "Maybe")
+type MethodEnv = Map Name (Map Name Expr)
+
+-- | map from constructor tags to their data type names
+type DataTypeMap = Map Tag Name
+
+-- | build a MethodEnv from instance declarations
+methodEnvFromInstances :: [InstanceDeclaration ()] -> DataTypeMap -> MethodEnv
+methodEnvFromInstances instances typeMap =
+  Map.fromListWith Map.union
+    [ (methodName, Map.singleton typeTag body)
+    | InstanceDeclaration _ _ instTypes meths <- instances
+    , (methodName, body) <- meths
+    , ty <- instTypes
+    , typeTag <- typeHintToTags ty typeMap
+    ]
+
+-- | convert a TypeHint to the type tags used for dispatch
+typeHintToTags :: TypeHint -> DataTypeMap -> [Name]
+typeHintToTags TypeHintInt _ = [Name "Int"]
+typeHintToTags TypeHintDouble _ = [Name "Double"]
+typeHintToTags TypeHintString _ = [Name "String"]
+typeHintToTags (TypeHintApp dt _) _ = [Name $ unDataType dt]
+typeHintToTags (TypeHintConstructor dt) _ = [Name $ unDataType dt]
+typeHintToTags (TypeHintVar _) _ = []
+typeHintToTags _ _ = []
+
+-- | get the type name tag from an evaluated value for method dispatch
+valueTypeTag :: Value -> DataTypeMap -> Name
+valueTypeTag (ValLiteral (LiteralInt _)) _ = Name "Int"
+valueTypeTag (ValLiteral (LiteralFloat _)) _ = Name "Double"
+valueTypeTag (ValLiteral (LiteralString _)) _ = Name "String"
+valueTypeTag (ValConstructor tag _) typeMap =
+  case Map.lookup tag typeMap of
+    Just n -> n
+    Nothing -> Name $ unTag tag
+valueTypeTag (ValApply v _) typeMap = valueTypeTag v typeMap
+valueTypeTag _ _ = Name "<unknown>"
+
 -- | track the heap of all thunks by id, and the next available id, alongside current env
 data EvalState = EvalState
   { heap :: IntMap ThunkInfo
   , nextId :: ThunkId
   , env :: Env
+  , methodEnv :: MethodEnv
+  , typeMap :: DataTypeMap
   }
 
 -- | evaluated form of Expr
@@ -39,6 +83,8 @@ data Value
   | ValClosure Name Expr Env
   -- | partially applied constructor or function, Value is function/constructor being applied, ThunkId is the argument
   | ValApply Value ThunkId
+  -- | pick the right typeclass method from method name and type name
+  | ValMethodDispatch Name (Map Name Expr)
 
 -- | a thunk is tracked by id
 newtype ThunkId = ThunkId { unThunkId :: Int }
@@ -64,10 +110,11 @@ instance Show Value where
   show (ValConstructor tag _) = show tag
   show (ValClosure arg _ _) = "<function arg=" <> T.unpack (unName arg) <> ">"
   show (ValApply _ t) = "<thunk id=" <> show t <> ">"
+  show (ValMethodDispatch name _) = "<method name=" <> T.unpack (unName name) <> ">"
 
--- | takes top-level bindings and the `main` Expr, evaluates to user-facing Text result
-interpret :: [(Name, Expr)] -> Expr -> Text
-interpret bindings mainExpr =
+-- | takes top-level bindings, method dispatch env, data type map, and the `main` Expr
+interpret :: [(Name, Expr)] -> MethodEnv -> DataTypeMap -> Expr -> Text
+interpret bindings methodEnv typeMap mainExpr =
   fst $ flip runState initialState $ do
     -- evaluate `main` Expr to a Value
     val <- withEnv topLevelEnv $ whnf mainExpr
@@ -87,6 +134,8 @@ interpret bindings mainExpr =
             ]
       , nextId = ThunkId $ length bindings
       , env = Map.empty
+      , methodEnv = methodEnv
+      , typeMap = typeMap
       }
 
 -- | allocate a thunk capturing the current env
@@ -145,10 +194,16 @@ whnf (ExprLambda name body) = do
   currentEnv <- gets env
   pure $ ValClosure name body currentEnv
 whnf (ExprVariable name) = do
-  currentEnv <- gets env
-  case Map.lookup name currentEnv of
-    Just tid -> force tid
-    Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> tshow name
+  -- check if this is a typeclass method name first
+  mMethod <- gets (Map.lookup name . methodEnv)
+  case mMethod of
+    Just dispatchTable -> do
+      pure $ ValMethodDispatch name dispatchTable
+    Nothing -> do
+      currentEnv <- gets env
+      case Map.lookup name currentEnv of
+        Just tid -> force tid
+        Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> tshow name
 whnf (ExprLet bindings body) = do
   s <- get
   let
@@ -171,39 +226,44 @@ whnf (ExprLet bindings body) = do
 -- binary operations
 whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
   case op of
-    -- primitive ops
+    -- primitive ops (typeclass-aware dispatch)
     "<>" -> strBinOp a b
-    "+"  -> intBinOp (+) a b
-    "-"  -> intBinOp (-) a b
-    "*"  -> intBinOp (*) a b
-    "/"  -> intBinOp div a b
-    "+." -> doubleBinOp (+) a b
-    "-." -> doubleBinOp (-) a b
-    "*." -> doubleBinOp (*) a b
-    "/." -> doubleBinOp (/) a b
+    "+"  -> numBinOp (+) (+) a b
+    "-"  -> numBinOp (-) (-) a b
+    "*"  -> numBinOp (*) (*) a b
+    "/"  -> numBinOp (div) (/) a b
     -- comparision operators (==, /=, <, >, <=, >=) are desugared into a `case` on the `compare` primitive
     "compare" -> comparePrim a b
     -- && and || are already desugared into `case` expressions
     _    -> do
-      currentEnv <- gets env
-      case Map.lookup (Name op) currentEnv of
-        Just tid -> do
-          funcVal <- force tid
-          afterA <- applyValue funcVal a
+      mMethod <- gets (Map.lookup (Name op) . methodEnv)
+      case mMethod of
+        Just dispatchTable -> do
+          afterA <- applyValue (ValMethodDispatch (Name op) dispatchTable) a
           applyValue afterA b
-        Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
+        Nothing -> do
+          currentEnv <- gets env
+          case Map.lookup (Name op) currentEnv of
+            Just tid -> do
+              funcVal <- force tid
+              afterA <- applyValue funcVal a
+              applyValue afterA b
+            Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
 -- unary operations
 whnf (ExprApplication (ExprVariable (Name op)) arg)
-  | op == "~" = unaryNeg arg
-  | op == "!" = unaryNot arg
   | op == "show" = showPrim arg
   | otherwise    = do
-      currentEnv <- gets env
-      case Map.lookup (Name op) currentEnv of
-        Just tid -> do
-          funcVal <- force tid
-          applyValue funcVal arg
-        Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> op
+      mMethod <- gets (Map.lookup (Name op) . methodEnv)
+      case mMethod of
+        Just dispatchTable ->
+          applyValue (ValMethodDispatch (Name op) dispatchTable) arg
+        Nothing -> do
+          currentEnv <- gets env
+          case Map.lookup (Name op) currentEnv of
+            Just tid -> do
+              funcVal <- force tid
+              applyValue funcVal arg
+            Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> op
 -- function applications
 whnf (ExprApplication func arg) = do
   funcVal <- whnf func
@@ -267,6 +327,18 @@ applyValue (ValApply v t) arg = do
   currentEnv <- gets env
   argThunk <- newThunkWithEnv currentEnv arg
   pure $ ValApply (ValApply v t) argThunk
+applyValue (ValMethodDispatch name dispatchTable) arg = do
+  argVal <- whnf arg
+  tmap <- gets typeMap
+  let tag = valueTypeTag argVal tmap
+  case Map.lookup tag dispatchTable of
+    Just body -> do
+      bodyVal <- whnf body
+      applyValue bodyVal arg
+    Nothing  -> do
+      throw $ RuntimeException $
+        "No matching instance for method " <> unName name
+        <> " for type " <> unName tag
 applyValue v _ = throw $ RuntimeException $ "Tried to apply something that isn't a function: " <> tshow v
 
 unApply :: Value -> [ThunkId] -> Either Text (Tag, Arity, [ThunkId])
@@ -274,23 +346,21 @@ unApply (ValConstructor tag arity) acc = Right (tag, arity, acc)
 unApply (ValApply val tid) acc = unApply val (tid:acc)
 unApply _ _ = Left "Not a constructor"
 
-intBinOp :: (Integer -> Integer -> Integer) -> Expr -> Expr -> State EvalState Value
-intBinOp op a b = do
+numBinOp :: (Integer -> Integer -> Integer) -> (Double -> Double -> Double) -> Expr -> Expr -> State EvalState Value
+numBinOp intOp doubleOp a b = do
   valA <- whnf a
-  valB <- whnf b
-  case (valA, valB) of
-    (ValLiteral (LiteralInt rawA), ValLiteral (LiteralInt rawB)) ->
-      pure . ValLiteral . LiteralInt $ rawA `op` rawB
-    _ -> throw $ RuntimeException "Type error in binary Integer operation"
-
-doubleBinOp :: (Double -> Double -> Double) -> Expr -> Expr -> State EvalState Value
-doubleBinOp op a b = do
-  valA <- whnf a
-  valB <- whnf b
-  case (valA, valB) of
-    (ValLiteral (LiteralFloat rawA), ValLiteral (LiteralFloat rawB)) ->
-      pure . ValLiteral . LiteralFloat $ rawA `op` rawB
-    _ -> throw $ RuntimeException "Type error in binary Double operation"
+  case valA of
+    ValLiteral (LiteralInt rawA) -> do
+      valB <- whnf b
+      case valB of
+        ValLiteral (LiteralInt rawB) -> pure . ValLiteral . LiteralInt $ intOp rawA rawB
+        _ -> throw $ RuntimeException "Type error in numeric operation"
+    ValLiteral (LiteralFloat rawA) -> do
+      valB <- whnf b
+      case valB of
+        ValLiteral (LiteralFloat rawB) -> pure . ValLiteral . LiteralFloat $ doubleOp rawA rawB
+        _ -> throw $ RuntimeException "Type error in numeric operation"
+    _ -> throw $ RuntimeException "Type error in numeric operation"
 
 strBinOp :: Expr -> Expr -> State EvalState Value
 strBinOp a b = do
@@ -316,22 +386,6 @@ comparePrim a b = do
       let result = compare rawA rawB
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
     _ -> throw $ RuntimeException "Invalid argument to compare"
-
-unaryNeg :: Expr -> State EvalState Value
-unaryNeg a = do
-  valA <- whnf a
-  case valA of
-    ValLiteral (LiteralInt rawA) -> pure . ValLiteral . LiteralInt $ negate rawA
-    ValLiteral (LiteralFloat rawA) -> pure . ValLiteral . LiteralFloat $ negate rawA
-    _ -> throw $ RuntimeException "Invalid argument to (~)"
-
-unaryNot :: Expr -> State EvalState Value
-unaryNot a = do
-  valA <- whnf a
-  case valA of
-    ValConstructor (Tag "True") _ -> pure $ ValConstructor (Tag "False") $ Arity 0
-    ValConstructor (Tag "False") _ -> pure $ ValConstructor (Tag "True") $ Arity 0
-    _ -> throw $ RuntimeException "Invalid argument to (!)"
 
 showPrim :: Expr -> State EvalState Value
 showPrim a = do

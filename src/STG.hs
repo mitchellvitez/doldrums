@@ -81,6 +81,7 @@ toStg e = case e of
       StgAtomVar name ->
         pure . StgLet (fBinds <> aBinds) $ StgApp name [aAtom]
       _ -> error "toStg: function position must be a variable after atomization"
+  _ -> error "missing pattern match in toStg"
 
 toStgAlt :: CaseAlternative () -> State Int StgAlt
 toStgAlt (Alternative pat body) = do

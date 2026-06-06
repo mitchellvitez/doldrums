@@ -1,0 +1,11 @@
+-- EXPECT 9
+
+class Multi a where
+  methodA :: a -> Int
+  methodB :: a -> Int
+
+instance Multi Int where
+  methodA x = x + 1
+  methodB x = x + 2
+
+main = methodA 3 + methodB 3

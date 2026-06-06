@@ -34,19 +34,22 @@ lexemeNewline = L.lexeme spaceConsumerNewline
 data TopLevel a
   = Decl DataDeclaration
   | Func (Function a)
-  | Sig (Name, TypeHint)
+  | TypeSignature (Name, TypeHint)
+  | ClassDecl TypeclassDeclaration
+  | InstanceDecl (InstanceDeclaration a)
 
 parseProgram :: Parser (Program SourcePos)
-parseProgram = do
-  topLevels <- some parseTopLevel
-  pure $ topLevelToProgram (Program [] [] []) topLevels
+parseProgram = topLevelToProgram <$> some parseTopLevel
 
-topLevelToProgram :: Program SourcePos -> [TopLevel SourcePos] -> Program SourcePos
-topLevelToProgram Program{..} [] = Program (reverse functions) (reverse dataDeclarations) (reverse typeSignatures)
-topLevelToProgram Program{..} (topLevel:rest) = case topLevel of
-  Decl (d@(DataDeclaration _ _ _)) -> topLevelToProgram Program{..} { dataDeclarations = d : dataDeclarations } rest
-  Func (f@(Function _ _ _ _)) -> topLevelToProgram Program{..} { functions = f : functions } rest
-  Sig s -> topLevelToProgram Program{..} { typeSignatures = s : typeSignatures } rest
+-- partition a bunch of top-level declarations into a Program
+topLevelToProgram :: [TopLevel SourcePos] -> Program SourcePos
+topLevelToProgram topLevelDecls = Program
+  { functions = [f | Func f <- topLevelDecls]
+  , dataDeclarations = [d | Decl d <- topLevelDecls]
+  , typeSignatures = [s | TypeSignature s <- topLevelDecls]
+  , typeclassDeclarations = [c | ClassDecl c <- topLevelDecls]
+  , instanceDeclarations = [i | InstanceDecl i <- topLevelDecls]
+  }
 
 parseTopLevel :: Parser (TopLevel SourcePos)
 parseTopLevel =
@@ -54,12 +57,60 @@ parseTopLevel =
 
 parseEitherTopLevel :: Parser (TopLevel SourcePos)
 parseEitherTopLevel =
-  try (Sig <$> parseSignature) <|>
+  try (TypeSignature <$> parseSignature) <|>
   try (Decl <$> parseDataDeclaration) <|>
+  try (ClassDecl <$> parseClassDeclaration) <|>
+  try (InstanceDecl <$> parseInstanceDeclaration) <|>
       (Func <$> parseFunction)
 
 symbol :: Text -> Parser ()
-symbol s = L.symbol' spaceConsumer s >> return ()
+symbol = void . L.symbol' spaceConsumer
+
+parseClassDeclaration :: Parser TypeclassDeclaration
+parseClassDeclaration = do
+  lexeme $ string "class"
+  name <- Name . unTag <$> parseTag
+  param <- parseName
+  lexeme $ string "where"
+  methods <- try (manyIndented parseSignature) <|> fmap pure parseSignature
+  pure $ TypeclassDeclaration name param methods
+
+parseInstanceDeclaration :: Parser (InstanceDeclaration SourcePos)
+parseInstanceDeclaration = do
+  lexeme $ string "instance"
+  context <- try parseContext <|> pure []
+  className <- Name . unTag <$> parseTag
+  instTypes <- many parseTypeHintSingle
+  lexeme $ string "where"
+  defs <- try (manyIndented parseMethodDef) <|> fmap pure parseMethodDef
+  pure $ InstanceDeclaration context className instTypes defs
+
+parseContext :: Parser [(Name, TypeHint)]
+parseContext = do
+  constraints <- fmap (:[]) parseSingleConstraint <|> parseMultipleConstraints
+  lexeme $ string "=>"
+  pure constraints
+
+parseSingleConstraint :: Parser (Name, TypeHint)
+parseSingleConstraint = do
+  name <- Name . unTag <$> parseTag
+  typeVar <- parseName
+  pure (name, TypeHintVar typeVar)
+
+parseMultipleConstraints :: Parser [(Name, TypeHint)]
+parseMultipleConstraints = do
+  lexeme $ char '('
+  constraints <- parseSingleConstraint `sepBy` lexeme (char ',')
+  lexeme $ char ')'
+  pure constraints
+
+parseMethodDef :: Parser (Name, AnnotatedExpr SourcePos)
+parseMethodDef = do
+  methodName <- parseSignatureName
+  args <- many parseName
+  lexeme $ string "="
+  body <- parseAnnotatedExpr
+  pure (methodName, foldr (\arg b -> AnnExprLambda (annotation b) arg b) body args)
 
 parseFunction :: Parser (Function SourcePos)
 parseFunction = do
@@ -122,46 +173,42 @@ parseOperator = makeExprParser parseExprApplication opTable
 opTable :: [[Operator Parser Expr]]
 opTable =
   [
+  -- level 9 (function application)
+  -- level 8
+  -- level 7
+    [ binaryOp "*" InfixL
+    , binaryOp "/" InfixL
+    ]
   -- level 6
-    [ prefixOp "~"
-    , prefixOp "!"
+  , [ binaryOp "+" InfixL
+    , binaryOp "-" InfixL
     ]
   -- level 5
-  , [ binaryOp "*."
-    , binaryOp "/."
-    , binaryOp "*"
-    , binaryOp "/"
+  , [ binaryOp "<>" InfixR
     ]
   -- level 4
-  , [ binaryOp "+."
-    , binaryOp "-."
-    , binaryOp "+"
-    , binaryOp "-"
-    , binaryOp "<>"
+  , [ binaryOp ">=" InfixN
+    , binaryOp "<=" InfixN
+    , binaryOp "==" InfixN
+    , binaryOp "/=" InfixN
+    , binaryOp ">" InfixN
+    , binaryOp "<" InfixN
     ]
   -- level 3
-  , [ binaryOp ">="
-    , binaryOp "<="
-    , binaryOp "=="
-    , binaryOp "/="
-    , binaryOp ">"
-    , binaryOp "<"
+  , [ binaryOp "&&" InfixR
     ]
   -- level 2
-  , [ binaryOp "&&"
+  , [ binaryOp "||" InfixR
     ]
-  -- level 1
-  , [ binaryOp "||"
-    ]
+  -- level 1 (>>=)
   -- level 0
-  , [ binaryOp "$"
+  , [ binaryOp "$" InfixR
     ]
   ]
 
-binaryOp :: Text -> Operator Parser Expr
-binaryOp name =
-  -- TODO: not every operator should be InfixR
-  InfixR $ binaryOpAST name <$ (lexemeNewline . try) (string name <* notFollowedBy operatorChar)
+binaryOp :: Text -> (Parser (Expr -> Expr -> Expr) -> Operator Parser Expr) -> Operator Parser Expr
+binaryOp name fixity =
+  fixity $ binaryOpAST name <$ (lexemeNewline . try) (string name <* notFollowedBy operatorChar)
 
 binaryOpAST :: Text -> Expr -> Expr -> Expr
 binaryOpAST "$" expr1 expr2 =
@@ -305,8 +352,21 @@ parseSignature :: Parser (Name, TypeHint)
 parseSignature = do
   name <- parseSignatureName
   lexeme $ string "::"
-  sig <- parseTypeHint
-  pure (name, sig)
+  signature <- try parseConstrainedTypeHint <|> parseTypeHint
+  pure (name, signature)
+
+parseConstrainedTypeHint :: Parser TypeHint
+parseConstrainedTypeHint = do
+  constraints <- try (fmap (:[]) parseSingleConstraint) <|> parseMultipleConstraints
+  lexeme $ string "=>"
+  body <- parseTypeHint
+  pure $ TypeHintConstraint constraints body
+
+parseSingleConstraintInline :: Parser (Name, TypeHint)
+parseSingleConstraintInline = do
+  name <- Name . unTag <$> parseTag
+  arg <- parseTypeHintSingle
+  pure (name, arg)
 
 parseSignatureName :: Parser Name
 parseSignatureName =
@@ -325,7 +385,7 @@ operatorChar = oneOf ("!#$%&*+./<=>?@\\^|-~" :: String)
 parseTypeHint :: Parser TypeHint
 parseTypeHint= do
   types <- parseTypeHintSingle `sepBy1` try (lexeme $ string "->")
-  pure $ foldr1 TypeHintArrow types
+  pure $ foldr1 (:~>) types
 
 parseTypeHintSingle :: Parser TypeHint
 parseTypeHintSingle = do
@@ -353,4 +413,5 @@ typeHintLiteral name hint = do
   pure hint
 
 keywords :: Set Text
-keywords = Set.fromList ["let", "in", "case", "of", "data"]
+keywords = Set.fromList
+  ["let", "in", "case", "of", "data", "class", "instance", "where"]

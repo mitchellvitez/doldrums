@@ -1,0 +1,12 @@
+-- EXPECT 7
+
+data Wrapper a = MkWrapper a
+
+class Unbox a where
+  unbox :: a -> Int
+
+instance Unbox (Wrapper Int) where
+  unbox w = case w of
+    MkWrapper x -> x
+
+main = unbox (MkWrapper 7)
