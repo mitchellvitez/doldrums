@@ -165,3 +165,34 @@ double n = n * 2
 main = f (double 4)
 |]
         (Program [Function () "id" [PatternVar "x"] (ExprVariable "x"), Function () "f" [PatternVar "p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" [PatternVar "n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [] [] [] [])
+
+    it "parses a guarded function" $ do
+      testProgramParser parseProgram [r|
+f x | x <= 5 = 0
+main = f 3
+|]
+        (Program [Function () "f" [PatternVar "x"]
+          (ExprCase
+            (ExprApplication (ExprApplication (ExprVariable "<=") (ExprVariable "x")) (ExprLiteral (LiteralInt 5)))
+            [Alternative (PatternConstructor (Tag "True") []) (ExprLiteral (LiteralInt 0))])
+        , Function () "main" [] (ExprApplication (ExprVariable "f") (ExprLiteral (LiteralInt 3)))] [] [] [] [])
+
+    it "parses guarded function with multiple guards" $ do
+      testProgramParser parseProgram [r|
+sign n | n > 0 = 1 | n < 0 = -1 | otherwise = 0
+main = sign 5
+|]
+        (Program [Function () "sign" [PatternVar "n"]
+          (ExprCase
+            (ExprApplication (ExprApplication (ExprVariable ">") (ExprVariable "n")) (ExprLiteral (LiteralInt 0)))
+            [ Alternative (PatternConstructor (Tag "True") []) (ExprLiteral (LiteralInt 1))
+            , Alternative (PatternConstructor (Tag "False") [])
+                (ExprCase
+                  (ExprApplication (ExprApplication (ExprVariable "<") (ExprVariable "n")) (ExprLiteral (LiteralInt 0)))
+                  [ Alternative (PatternConstructor (Tag "True") []) (ExprLiteral (LiteralInt (-1)))
+                  , Alternative (PatternConstructor (Tag "False") [])
+                      (ExprCase (ExprVariable "otherwise")
+                        [Alternative (PatternConstructor (Tag "True") []) (ExprLiteral (LiteralInt 0))])
+                  ])
+            ])
+        , Function () "main" [] (ExprApplication (ExprVariable "sign") (ExprLiteral (LiteralInt 5)))] [] [] [] [])

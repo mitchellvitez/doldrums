@@ -1,0 +1,8 @@
+-- EXPECT 0
+
+sign n
+  | n > 0 = 1
+  | n < 0 = -1
+  | otherwise = 0
+
+main = sign 7 + sign (-3) + sign 0

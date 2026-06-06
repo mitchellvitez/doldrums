@@ -120,10 +120,51 @@ parseFunction :: Parser (Function SourcePos)
 parseFunction = do
   name <- parseName
   args <- many parsePattern
-  L.symbol' spaceConsumerNewline "=" >> return ()
-  body <- parseAnnotatedExpr
+  body <- try parseGuardedBody <|> parseUnguardedBody
   sourcePos <- getSourcePos
   pure $ Function sourcePos name args body
+
+parseGuardedBody :: Parser (AnnotatedExpr SourcePos)
+parseGuardedBody = do
+  spaceConsumerNewline
+  char '|'
+  spaceConsumerNewline
+  let guardSep = try $ spaceConsumerNewline *> char '|' <* spaceConsumerNewline
+  clauses <- parseGuardClause `sepBy1` guardSep
+  pure $ desugarGuards clauses
+
+parseUnguardedBody :: Parser (AnnotatedExpr SourcePos)
+parseUnguardedBody = do
+  L.symbol' spaceConsumerNewline "="
+  parseAnnotatedExpr
+
+parseGuardClause :: Parser (AnnotatedExpr SourcePos, AnnotatedExpr SourcePos)
+parseGuardClause = do
+  guardExpr <- parseAnnotatedExpr
+  L.symbol' spaceConsumerNewline "="
+  bodyExpr <- parseAnnotatedExpr
+  pure (guardExpr, bodyExpr)
+
+{- -- desugars from
+f x
+  | guardExpr = e1
+  | otherwise = e2
+-- to
+f x = case guardExpr of
+  True -> e1
+  False -> case otherwise of  -- otherwise == True
+    True -> e2
+-}
+desugarGuards :: [(AnnotatedExpr a, AnnotatedExpr a)] -> AnnotatedExpr a
+desugarGuards [(guard, body)] =
+  AnnExprCase (annotation guard) guard
+    [Alternative (PatternConstructor (Tag "True") []) body]
+desugarGuards ((guard, body) : rest) =
+  AnnExprCase (annotation guard) guard
+    [ Alternative (PatternConstructor (Tag "True") []) body
+    , Alternative (PatternConstructor (Tag "False") []) $ desugarGuards rest
+    ]
+desugarGuards _ = error "desugarGuards: empty guards"
 
 parseDataDeclaration :: Parser DataDeclaration
 parseDataDeclaration = do

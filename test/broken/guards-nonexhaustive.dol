@@ -1,0 +1,6 @@
+-- BROKEN
+
+-- no otherwise guard, non-exhaustive
+f x | x > 0 = x
+
+main = f (-1)

@@ -1,0 +1,5 @@
+-- EXPECT 4
+
+abs n | n >= 0 = n | otherwise = 0 - n
+
+main = abs 4
