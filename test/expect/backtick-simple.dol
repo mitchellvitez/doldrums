@@ -1,0 +1,4 @@
+-- EXPECT 3
+
+add x y = x + y
+main = show $ 1 `add` 2

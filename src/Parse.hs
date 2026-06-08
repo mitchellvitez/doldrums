@@ -237,6 +237,8 @@ opTable =
     [ binaryOp "." InfixR
     ]
   -- level 8
+  , [ backtickOp
+    ]
   -- level 7
   , [ binaryOp "*" InfixL
     , binaryOp "/" InfixL
@@ -280,6 +282,11 @@ binaryOpAST "." expr1 expr2 =
   ExprLambda (Name "compositionresult") (ExprApplication expr1 (ExprApplication expr2 (ExprVariable (Name "compositionresult"))))
 binaryOpAST name expr1 expr2 =
   ExprApplication (ExprApplication (ExprVariable (Name name)) expr1) expr2
+
+backtickOp :: Operator Parser Expr
+backtickOp = InfixL $ do
+  name <- try $ lexeme (char '`') *> parseName <* lexeme (char '`')
+  pure $ \l r -> ExprApplication (ExprApplication (ExprVariable name) l) r
 
 prefixOp :: Text -> Operator Parser Expr
 prefixOp name = Prefix $ prefixOpAST name <$ (lexemeNewline . try) (string name)

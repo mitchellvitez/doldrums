@@ -1,0 +1,5 @@
+-- EXPECT 9
+
+add x y = x + y
+mul x y = x * y
+main = show $ 1 `add` 2 `mul` 3
