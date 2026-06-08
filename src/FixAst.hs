@@ -69,8 +69,14 @@ buildClauses annot (var:vars) alts =
       patternGroupKey (PatternLiteral l) = LiteralKey (T.pack $ show l)
       patternGroupKey (PatternConstructor t _) = ConstructorKey t
 
+      isCatchAllPattern PatternWildcard = True
+      isCatchAllPattern (PatternVar _) = True
+      isCatchAllPattern _ = False
+
+      (catchalls, specifics) = partition (isCatchAllPattern . fst) grouped
+
   in AnnExprCase annot (AnnExprVariable annot var)
-    [Alternative pat (buildClauses annot vars subAlts) | (pat, subAlts) <- grouped]
+    [Alternative pat (buildClauses annot vars subAlts) | (pat, subAlts) <- specifics <> catchalls]
 buildClauses _ _ _ = error "unhandled build clauses"
 
 data PatternGroupKey = CatchAllKey | LiteralKey Text | ConstructorKey Tag

@@ -193,7 +193,6 @@ foldl' :: (b -> a -> b) -> b -> List a -> b
 foldl' _ acc Nil = acc
 foldl' f acc (Cons x xs) = seq acc $ foldl' f (f acc x) xs
 
-{-
 zip :: [a] -> [b] -> [(a, b)]
 zip [] _ = []
 zip _ [] = []
@@ -204,9 +203,8 @@ splitAt n xs
   | n <= 0 = ([], xs)
   | otherwise = case xs of
       [] -> ([], [])
-      (y:ys) -> let (as, bs) = splitAt (n - 1) ys
-                in (y:as, bs)
--}
+      (y:ys) -> case splitAt (n - 1) ys of
+          (as, bs) -> (y:as, bs)
 
 -- numbers
 add x y = x + y

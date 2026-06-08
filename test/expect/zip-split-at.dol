@@ -1,0 +1,8 @@
+-- EXPECT 5
+
+main = f + g
+
+g = length $ zip [1,2,3] [5..25]
+
+f = case splitAt 2 [1,2,3,4] of
+    (as, bs) -> length as
