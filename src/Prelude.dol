@@ -9,6 +9,32 @@ data Ordering = LT | EQ | GT
 data Unit = Unit
   deriving (Eq, Ord, Show)
 
+data Tuple2 a b = Tuple2 a b
+  deriving (Eq, Ord)
+
+instance (Show a, Show b) => Show (Tuple2 a b) where
+  show (a, b) = "(" <> show a <> ", " <> show b <> ")"
+
+data Tuple3 a b c = Tuple3 a b c
+  deriving (Eq, Ord)
+
+instance (Show a, Show b, Show c) => Show (Tuple3 a b c) where
+  show (a, b, c) = "(" <> show a <> ", " <> show b <> ", " <> show c <> ")"
+
+data Tuple4 a b c d = Tuple4 a b c d
+  deriving (Eq, Ord)
+
+instance (Show a, Show b, Show c, Show d) => Show (Tuple4 a b c d) where
+  show (a, b, c, d) = "(" <> show a <> ", " <> show b <> ", " <> show c <> ", " <> show d <> ")"
+
+data Tuple5 a b c d e = Tuple5 a b c d e
+  deriving (Eq, Ord)
+
+instance (Show a, Show b, Show c, Show d, Show e) => Show (Tuple5 a b c d e) where
+  show (a, b, c, d, e) = "(" <> show a <> ", " <> show b <> ", " <> show c <> ", " <> show d <> ", " <> show e <> ")"
+
+-- could keep going with bigger and bigger tuples
+
 data Maybe a = Nothing | Just a
   deriving (Eq, Ord, Show)
 

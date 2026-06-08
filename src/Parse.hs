@@ -112,10 +112,10 @@ parseMethodDef = do
   args <- many parsePattern
   lexeme $ string "="
   body <- parseAnnotatedExpr
-  pure (methodName, foldr (\arg b -> AnnExprLambda (annotation b) (freshPatternVar arg) b) body args)
+  pure (methodName, foldr patternToLambda body args)
     where
-      freshPatternVar (PatternVar n) = n
-      freshPatternVar _ = Name "pat"
+      patternToLambda (PatternVar n) b = AnnExprLambda (annotation b) n b
+      patternToLambda pat b = AnnExprLambda (annotation b) (Name "pat") (AnnExprCase (annotation b) (AnnExprVariable (annotation b) (Name "pat")) [Alternative pat b])
 
 parseFunction :: Parser (Function SourcePos)
 parseFunction = do
@@ -356,7 +356,20 @@ parseAtomicPattern =
   PatternLiteral <$> parseLiteral <|>
   try parseListPattern <|>
   PatternConstructor <$> parseTag <*> many parsePattern <|>
-  between (lexeme $ char '(') (lexeme $ char ')') parsePattern
+  parseParenPattern
+
+parseParenPattern :: Parser Pattern
+parseParenPattern = do
+  lexeme $ char '('
+  try (lexeme $ char ')' *> pure (PatternConstructor (Tag "Unit") [])) <|> do
+    args <- parsePattern `sepBy1` lexeme (char ',')
+    lexeme $ char ')'
+    case args of
+      [x] -> pure x
+      _ -> do
+        let n = length args
+            tagName = Tag $ T.pack $ "Tuple" ++ show n
+        pure $ PatternConstructor tagName args
 
 parseConsRest :: Pattern -> Parser Pattern
 parseConsRest pat = do
@@ -428,9 +441,15 @@ parseExprVariable = ExprVariable <$> parseName
 parseExprParenthesized :: Parser Expr
 parseExprParenthesized = do
   lexeme $ char '('
-  body <- parseExpr
-  lexeme $ char ')'
-  pure body
+  try (lexeme $ char ')' *> pure (ExprConstructor (Tag "Unit") (Arity 0))) <|> do
+    args <- parseExpr `sepBy1` lexeme (char ',')
+    lexeme $ char ')'
+    case args of
+      [x] -> pure x
+      _ -> do
+        let n = length args
+            tagName = Tag $ T.pack $ "Tuple" ++ show n
+        pure $ foldl ExprApplication (ExprConstructor tagName (Arity n)) args
 
 parseOperatorExpr :: Parser Expr
 parseOperatorExpr = do
@@ -580,7 +599,20 @@ parseTypeHintAtomic =
   try (TypeHintVar <$> parseName) <|>
   try (TypeHintConstructor . DataType . unTag <$> parseTag) <|>
   try parseListTypeHint <|>
-  between (lexeme $ char '(') (lexeme $ char ')') parseTypeHint
+  try parseParenTypeHint
+
+parseParenTypeHint :: Parser TypeHint
+parseParenTypeHint = do
+  lexeme $ char '('
+  try (lexeme $ char ')' *> pure (TypeHintConstructor (DataType "Unit"))) <|> do
+    args <- parseTypeHint `sepBy1` lexeme (char ',')
+    lexeme $ char ')'
+    case args of
+      [x] -> pure x
+      _ -> do
+        let n = length args
+            dt = DataType $ T.pack $ "Tuple" ++ show n
+        pure $ TypeHintApp dt args
 
 parseListTypeHint :: Parser TypeHint
 parseListTypeHint = do
