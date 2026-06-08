@@ -1,7 +1,5 @@
 -- EXPECT Cons 2 (Cons 3 (Cons 4 Nil))
 
-main :: [Int]
 main = map addOne [1, 2, 3]
 
-addOne :: Int -> Int
 addOne x = x + 1

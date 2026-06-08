@@ -1,6 +1,6 @@
 -- EXPECT 3
 
-three = if (2 == 3 || 3 < 4) 3 7
+three = if 2 == 3 || 3 < 4 then 3 else 7
 four = ((1 + 6 - 2) * 4) / 5
 
 data Pair a b = Pair a b
@@ -18,4 +18,4 @@ f :: Int -> Int -> Pair Int Int
 f x y = first $ Pair (id x) (second $ Pair 3 y)
 
 main =
-  f three (id four)
+  f three $ id four

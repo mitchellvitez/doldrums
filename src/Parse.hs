@@ -208,6 +208,7 @@ parseExpr =
   try parseExprLet    <|>
   try parseExprLambda <|>
   try parseExprCase   <|>
+  try parseExprIf     <|>
   parseOperator
 
 parseOperator :: Parser Expr
@@ -231,7 +232,8 @@ opTable =
     , binaryOp "-" InfixL
     ]
   -- level 5
-  , [ binaryOp "<>" InfixR
+  , [ binaryOp ":" InfixR
+    , binaryOp "<>" InfixR
     ]
   -- level 4
   , [ binaryOp ">=" InfixN
@@ -314,13 +316,51 @@ parseExprCase = do
   alternatives <- try $ manyIndented parseCaseAlternative
   pure $ ExprCase scrutinee alternatives
 
+parseExprIf :: Parser Expr
+parseExprIf = do
+  lexeme $ string "if"
+  cond <- parseExpr
+  spaceConsumerNewline
+  lexeme $ string "then"
+  spaceConsumerNewline
+  trueExpr <- parseExpr
+  spaceConsumerNewline
+  lexeme $ string "else"
+  spaceConsumerNewline
+  falseExpr <- parseExpr
+  pure $ ExprApplication (ExprApplication (ExprApplication (ExprVariable "if") cond) trueExpr) falseExpr
+
 parsePattern :: Parser Pattern
-parsePattern =
+parsePattern = do
+  pat <- parseAtomicPattern
+  try (parseConsRest pat) <|> pure pat
+
+parseAtomicPattern :: Parser Pattern
+parseAtomicPattern =
   PatternVar <$> parseName <|>
   PatternWildcard <$ lexeme (char '_') <|>
   PatternLiteral <$> parseLiteral <|>
+  try parseListPattern <|>
   PatternConstructor <$> parseTag <*> many parsePattern <|>
   between (lexeme $ char '(') (lexeme $ char ')') parsePattern
+
+parseConsRest :: Pattern -> Parser Pattern
+parseConsRest pat = do
+  lexeme $ char ':'
+  rest <- parsePattern
+  pure $ PatternConstructor (Tag "Cons") [pat, rest]
+
+parseListPattern :: Parser Pattern
+parseListPattern = do
+  lexeme $ char '['
+  let nilPattern = PatternConstructor (Tag "Nil") []
+      consPattern x xs = PatternConstructor (Tag "Cons") [x, xs]
+  try (lexeme $ char ']' *> pure nilPattern) <|> do
+    first <- parsePattern
+    try (lexeme $ char ']' *> pure (consPattern first nilPattern)) <|> do
+      rest <- some (lexeme (char ',') *> parsePattern)
+      lexeme $ char ']'
+      pure $ foldr consPattern nilPattern (first : rest)
 
 parseCaseAlternative :: Parser (CaseAlternative ())
 parseCaseAlternative = do
@@ -361,9 +401,11 @@ parseExprApplication = do
 
 parseAtomicExpr :: Parser Expr
 parseAtomicExpr =
-  parseExprVariable    <|>
-  parseExprLiteral     <|>
+  parseExprVariable <|>
+  parseExprLiteral <|>
   parseExprConstructor <|>
+  try parseOperatorExpr <|>
+  try parseListExpr <|>
   parseExprParenthesized
 
 parseExprVariable :: Parser Expr
@@ -375,6 +417,57 @@ parseExprParenthesized = do
   body <- parseExpr
   lexeme $ char ')'
   pure body
+
+parseOperatorExpr :: Parser Expr
+parseOperatorExpr = do
+  lexeme $ char '('
+  op <- some operatorChar
+  lexeme $ char ')'
+  pure $ ExprVariable (Name $ T.pack op)
+
+-- parse list expressions like [] [1,2,3] and [1,3..10]
+parseListExpr :: Parser Expr
+parseListExpr = do
+  lexeme $ char '['
+  try parseEmptyList <|> parseNonEmptyList
+  where
+    nilExpr = ExprConstructor (Tag "Nil") $ Arity (-1)
+    consExpr = ExprConstructor (Tag "Cons") $ Arity (-1)
+    cons x xs = ExprApplication (ExprApplication consExpr x) xs
+
+    parseEmptyList = do
+      lexeme $ char ']'
+      pure nilExpr
+
+    parseNonEmptyList = do
+      first <- parseExpr
+      try (parseRange first)
+        <|> try (parseCommaSep first)
+        <|> do
+          lexeme $ char ']'
+          pure $ cons first nilExpr
+
+    parseRange first = do
+      lexeme $ string ".."
+      end <- parseExpr
+      lexeme $ char ']'
+      pure $ ExprApplication (ExprApplication (ExprVariable "enumFromTo") first) end
+
+    parseCommaSep first = do
+      lexeme $ char ','
+      second <- parseExpr
+      try (parseStepRange first second)
+        <|> do
+          rest <- many (lexeme (char ',') *> parseExpr)
+          lexeme $ char ']'
+          pure $ cons first $ cons second $ foldr cons nilExpr rest
+
+    parseStepRange first second = do
+      lexeme $ string ".."
+      end <- parseExpr
+      lexeme $ char ']'
+      pure $ ExprApplication
+        (ExprApplication (ExprApplication (ExprVariable "enumFromThenTo") first) second) end
 
 parseNumber :: Num a => Parser a -> Parser a
 parseNumber parseUnsigned = lexeme . try $ do
@@ -448,7 +541,7 @@ parseOperatorInParens = do
   pure name
 
 operatorChar :: Parser Char
-operatorChar = oneOf ("!#$%&*+./<=>?@\\^|-~" :: String)
+operatorChar = oneOf (":!#$%&*+./<=>?@\\^|-~" :: String)
 
 parseTypeHint :: Parser TypeHint
 parseTypeHint= do
@@ -472,7 +565,15 @@ parseTypeHintAtomic =
   typeHintLiteral "String" TypeHintString <|>
   try (TypeHintVar <$> parseName) <|>
   try (TypeHintConstructor . DataType . unTag <$> parseTag) <|>
+  try parseListTypeHint <|>
   between (lexeme $ char '(') (lexeme $ char ')') parseTypeHint
+
+parseListTypeHint :: Parser TypeHint
+parseListTypeHint = do
+  lexeme $ char '['
+  hint <- parseTypeHint
+  lexeme $ char ']'
+  pure $ TypeHintApp (DataType "List") [hint]
 
 typeHintLiteral :: Text -> TypeHint -> Parser TypeHint
 typeHintLiteral name hint = do
@@ -481,4 +582,15 @@ typeHintLiteral name hint = do
 
 keywords :: Set Text
 keywords = Set.fromList
-  ["let", "in", "case", "of", "data", "class", "instance", "where"]
+  [ "let"
+  , "in"
+  , "case"
+  , "of"
+  , "data"
+  , "class"
+  , "instance"
+  , "where"
+  , "if"
+  , "then"
+  , "else"
+  ]

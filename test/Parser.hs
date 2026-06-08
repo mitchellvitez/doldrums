@@ -166,6 +166,46 @@ main = f (double 4)
 |]
         (Program [Function () "id" [PatternVar "x"] (ExprVariable "x"), Function () "f" [PatternVar "p"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprApplication (ExprVariable "id") (ExprVariable "p"))) (ExprVariable "p")), Function () "double" [PatternVar "n"] (ExprApplication (ExprApplication (ExprVariable "*") (ExprVariable "n")) (ExprLiteral (LiteralInt 2))), Function () "main" [] (ExprApplication (ExprVariable "f") (ExprApplication (ExprVariable "double") (ExprLiteral (LiteralInt 4))))] [] [] [] [])
 
+    it "parseListExpr: empty list" $ do
+      testParser parseExpr "[]"
+        (ExprConstructor (Tag "Nil") (Arity (-1)))
+      testParser parseListExpr "[]"
+        (ExprConstructor (Tag "Nil") (Arity (-1)))
+
+    it "parseListExpr: single element" $ do
+      testParser parseExpr "[1]"
+        (ExprApplication (ExprApplication (ExprConstructor "Cons" (-1)) (ExprLiteral (LiteralInt 1))) (ExprConstructor "Nil" (-1)))
+
+    it "parseListExpr: multiple elements" $ do
+      testParser parseExpr "[1, 2, 3]"
+        (ExprApplication (ExprApplication (ExprConstructor "Cons" (-1)) (ExprLiteral (LiteralInt 1)))
+          (ExprApplication (ExprApplication (ExprConstructor "Cons" (-1)) (ExprLiteral (LiteralInt 2)))
+            (ExprApplication (ExprApplication (ExprConstructor "Cons" (-1)) (ExprLiteral (LiteralInt 3)))
+              (ExprConstructor "Nil" (-1)))))
+
+    it "parseListExpr: range [1..10]" $ do
+      testParser parseExpr "[1..10]"
+        (ExprApplication (ExprApplication (ExprVariable "enumFromTo") (ExprLiteral (LiteralInt 1))) (ExprLiteral (LiteralInt 10)))
+
+    it "parseListExpr: step range [1,3..10]" $ do
+      testParser parseExpr "[1,3..10]"
+        (ExprApplication
+          (ExprApplication (ExprApplication (ExprVariable "enumFromThenTo")
+            (ExprLiteral (LiteralInt 1))) (ExprLiteral (LiteralInt 3)))
+          (ExprLiteral (LiteralInt 10)))
+
+    it "parseOperatorExpr: parenthesized operator" $ do
+      testParser parseExpr "(:)"
+        (ExprVariable (Name ":"))
+
+    it "parseListTypeHint" $ do
+      testParser parseTypeHint "[Int]"
+        (TypeHintApp (DataType "List") [TypeHintInt])
+      testParser parseTypeHint "[a]"
+        (TypeHintApp (DataType "List") [TypeHintVar "a"])
+      testParser parseTypeHint "[List Int]"
+        (TypeHintApp (DataType "List") [TypeHintApp (DataType "List") [TypeHintInt]])
+
     it "parses a guarded function" $ do
       testProgramParser parseProgram [r|
 f x | x <= 5 = 0

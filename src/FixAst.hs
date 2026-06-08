@@ -175,6 +175,9 @@ filterReachable program@Program{..}
 -- | match on expressions, return `Just newExpr` if a desugaring rule applies
 desugarRules :: AnnotatedExpr a -> Maybe (AnnotatedExpr a)
 desugarRules = \case
+  -- x : xs  ~>  Cons x xs
+  AnnExprVariable ann (Name ":") ->
+    Just $ AnnExprConstructor ann (Tag "Cons") (Arity 2)
   -- a && b  ~>  case a of { True -> b; False -> False }
   BinOp ann a b "&&" ->
     Just $ AnnExprCase ann a
@@ -203,6 +206,17 @@ desugarRules = \case
     desugarComparisonOperator ann a b (True, True, False)
   BinOp ann a b ">=" ->
     desugarComparisonOperator ann a b (False, True, True)
+
+  -- if cond then t else e  ~>  case cond of { True -> t; False -> e }
+  AnnExprApplication ann
+    (AnnExprApplication _
+      (AnnExprApplication _ (AnnExprVariable _ (Name "if")) cond)
+      trueVal)
+    falseVal ->
+      Just $ AnnExprCase ann cond
+        [ Alternative (PatternConstructor (Tag "True") []) trueVal
+        , Alternative (PatternConstructor (Tag "False") []) falseVal
+        ]
   _ -> Nothing
 
 pattern BinOp :: a -> AnnotatedExpr a -> AnnotatedExpr a -> Text -> AnnotatedExpr a

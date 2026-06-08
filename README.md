@@ -155,6 +155,17 @@ f -7   -- applies f to negative seven
 f - 7  -- subtracts seven from f
 ```
 
+### List syntax
+
+Square bracket list syntax is supported for expressions, pattern matches, and type signatures. `:` is equivalent to `Cons`. The `..` syntax allows for list ranges.
+
+```hs
+[]
+(x:xs)
+[Int]
+[1,3..10]
+```
+
 ## Parsing
 
 The parser uses [Megaparsec](https://hackage.haskell.org/package/megaparsec) and [`makeExprParser`](https://hackage.haskell.org/package/parser-combinators-1.3.0/docs/Control-Monad-Combinators-Expr.html#v:makeExprParser) from `parser-combinators`.
@@ -195,6 +206,7 @@ Precedence | Associativity | Operator
 7          | left          | `/`
 6          | left          | `+`
 6          | left          | `-`
+5          | right         | `:`
 5          | right         | `<>`
 4          | _none_        | `==`
 4          | _none_        | `/=`

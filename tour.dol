@@ -33,11 +33,12 @@ fib n =
     1 -> 1
     _ -> fib (n - 1) + fib (n - 2)
 
--- `if condition thenClause elseClause` is like a `case` on `Bool`
+-- guard clauses with `| <boolean_expr> = <body>`
 -- `$` has the lowest precedence, eliminating excess parentheses
 fac :: Int -> Int
-fac n =
-  if (n == 0) 1 $ n * fac (n - 1)
+fac n
+  | n == 0 = 1
+  | otherwise = n * fac (n - 1)
 
 -- `let`...`in` to name variables
 greeting :: String

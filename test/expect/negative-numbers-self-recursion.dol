@@ -1,5 +1,7 @@
 -- EXPECT -6
 
-g n = if (n < negate 5) n $ g (n - 1)
+g n
+  | n < negate 5 = n
+  | otherwise = g (n - 1)
 
 main = g 3

@@ -56,25 +56,19 @@ class Semigroup a => Monoid a where
 (&&) :: Bool -> Bool -> Bool
 (||) :: Bool -> Bool -> Bool
 
--- TODO: haskell-style ternary keywords
-if :: Bool -> a -> a -> a
-if cond then else = case cond of
-  True -> then
-  False -> else
-
 otherwise = True
 
 not :: Bool -> Bool
-not x = if x False True
+not x = if x then False else True
 
 and :: Bool -> Bool -> Bool
-and x y = if x y False
+and x y = if x then y else False
 
 or :: Bool -> Bool -> Bool
-or x y = if x True y
+or x y = if x then True else y
 
 xor :: Bool -> Bool -> Bool
-xor x y = if x (not y) y
+xor x y = if x then not y else y
 
 negate :: a -> a
 negate x = 0 - x
@@ -99,26 +93,26 @@ twice f = f . f
 
 -- lists
 length :: List a -> Int
-length Nil = 0
-length (Cons x xs) = 1 + length xs
+length [] = 0
+length (x:xs) = 1 + length xs
 
 map :: (a -> b) -> List a -> List b
-map _ Nil = Nil
-map f (Cons x xs) = Cons (f x) $ map f xs
+map _ [] = []
+map f (x:xs) = f x : map f xs
 
 filter :: (a -> Bool) -> List a -> List a
-filter _ Nil = Nil
-filter pred (Cons x xs) = case pred x of
-  True -> Cons x $ filter pred xs
+filter _ [] = []
+filter pred (x:xs) = case pred x of
+  True -> x : filter pred xs
   False -> filter pred xs
 
 head :: List a -> Maybe a
-head Nil = Nothing
-head (Cons x _) = Just x
+head [] = Nothing
+head (x:_) = Just x
 
 tail :: List a -> List a
-tail Nil = Nil
-tail (Cons _ xs) = xs
+tail [] = []
+tail (_:xs) = xs
 
 last :: List a -> Maybe a
 last Nil = Nothing
@@ -163,6 +157,13 @@ foldl' :: (b -> a -> b) -> b -> List a -> b
 foldl' _ acc Nil = acc
 foldl' f acc (Cons x xs) = seq acc $ foldl' f (f acc x) xs
 
+{- TODO: awaiting tuples
+zip :: [a] -> [b] -> [(a,b)]
+zip [] _ = []
+zip _ [] = []
+zip (a:as) (b:bs) = (a,b) : zip as bs
+-}
+
 -- numbers
 add x y = x + y
 multiply x y = x * y
@@ -192,3 +193,24 @@ even n = mod n 2 == 0
 
 odd :: Int -> Bool
 odd = not . even
+
+abs :: Num a => a -> a
+abs x
+  | x < 0 = negate x
+  | otherwise = x
+
+signum :: Num a => a -> a
+signum x
+  | x < 0 = negate 1
+  | x == 0 = 0
+  | otherwise = 1
+
+enumFromTo :: Int -> Int -> List Int
+enumFromTo start end
+  | start <= end = start : enumFromTo (succ start) end
+  | otherwise = []
+
+enumFromThenTo :: Int -> Int -> Int -> List Int
+enumFromThenTo start next end
+  | start <= end = start : enumFromThenTo next (next + next - start) end
+  | otherwise = []
