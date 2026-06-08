@@ -1,0 +1,5 @@
+-- EXPECT 3
+
+f x y = x + y
+
+main = 1 `f` 2

@@ -193,11 +193,19 @@ foldl' :: (b -> a -> b) -> b -> List a -> b
 foldl' _ acc Nil = acc
 foldl' f acc (Cons x xs) = seq acc $ foldl' f (f acc x) xs
 
-{- TODO: awaiting tuples
-zip :: [a] -> [b] -> [(a,b)]
+{-
+zip :: [a] -> [b] -> [(a, b)]
 zip [] _ = []
 zip _ [] = []
-zip (a:as) (b:bs) = (a,b) : zip as bs
+zip (a:as) (b:bs) = (a, b) : zip as bs
+
+splitAt :: Int -> [a] -> ([a], [a])
+splitAt n xs
+  | n <= 0 = ([], xs)
+  | otherwise = case xs of
+      [] -> ([], [])
+      (y:ys) -> let (as, bs) = splitAt (n - 1) ys
+                in (y:as, bs)
 -}
 
 -- numbers

@@ -1,0 +1,7 @@
+-- EXPECT 5
+
+f x = g x + 1
+  where
+    g n = n * 2
+
+main = f 2

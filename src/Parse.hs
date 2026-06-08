@@ -123,7 +123,8 @@ parseFunction = do
   args <- many parsePattern
   body <- try parseGuardedBody <|> parseUnguardedBody
   sourcePos <- getSourcePos
-  pure $ Function sourcePos name args body
+  body' <- parseWhereClause sourcePos body
+  pure $ Function sourcePos name args body'
 
 parseGuardedBody :: Parser (AnnotatedExpr SourcePos)
 parseGuardedBody = do
@@ -166,6 +167,18 @@ desugarGuards ((guard, body) : rest) =
     , Alternative (PatternConstructor (Tag "False") []) $ desugarGuards rest
     ]
 desugarGuards _ = error "desugarGuards: empty guards"
+
+parseWhereClause :: SourcePos -> AnnotatedExpr SourcePos -> Parser (AnnotatedExpr SourcePos)
+parseWhereClause funcPos body = do
+  mWhere <- optional $ try $ do
+    spaceConsumerNewline
+    lexeme $ string "where"
+    definitions <- try (manyIndented parseMethodDef) <|> fmap pure parseMethodDef
+    pure definitions
+  case mWhere of
+    Nothing -> pure body
+    Just defs ->
+      pure $ AnnExprLet funcPos [(name, const funcPos <$> body') | (name, body') <- defs] body
 
 parseDataDeclaration :: Parser DataDeclaration
 parseDataDeclaration = do

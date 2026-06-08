@@ -1,0 +1,9 @@
+-- EXPECT 9
+
+f x
+  | x > 0 = x + g x
+  | otherwise = 0
+  where
+    g n = n * 2
+
+main = f 3

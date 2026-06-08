@@ -1,0 +1,7 @@
+-- EXPECT 10
+
+f x = 1 `add` x `add` 5
+  where
+    add a b = a + b
+
+main = f 4
