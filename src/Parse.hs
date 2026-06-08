@@ -5,7 +5,7 @@ module Parse where
 import Language
 
 import Control.Monad.Combinators.Expr
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -439,17 +439,47 @@ parseExprVariable :: Parser Expr
 parseExprVariable = ExprVariable <$> parseName
 
 parseExprParenthesized :: Parser Expr
-parseExprParenthesized = do
-  lexeme $ char '('
-  try (lexeme $ char ')' *> pure (ExprConstructor (Tag "Unit") (Arity 0))) <|> do
-    args <- parseExpr `sepBy1` lexeme (char ',')
-    lexeme $ char ')'
-    case args of
-      [x] -> pure x
-      _ -> do
-        let n = length args
-            tagName = Tag $ T.pack $ "Tuple" ++ show n
-        pure $ foldl ExprApplication (ExprConstructor tagName (Arity n)) args
+parseExprParenthesized = lexeme $ char '(' *> parseParensInner
+
+parseParensInner :: Parser Expr
+parseParensInner =
+  try parseParensUnit        <|>
+  try parseParensRightSection <|>
+  try parseParensTupleOrExpr <|>
+  parseParensLeftSection
+
+parseParensUnit :: Parser Expr
+parseParensUnit = lexeme $ char ')' *> pure (ExprConstructor (Tag "Unit") (Arity 0))
+
+parseParensRightSection :: Parser Expr
+parseParensRightSection = do
+  op <- try $ some operatorChar
+  when (op == "-") $ notFollowedBy digitChar
+  spaceConsumer
+  expr <- parseExpr
+  lexeme $ char ')'
+  let opName = Name $ T.pack op
+  pure $ ExprLambda (Name "sectionVar") $
+    ExprApplication (ExprApplication (ExprVariable opName) (ExprVariable (Name "sectionVar"))) expr
+
+parseParensTupleOrExpr :: Parser Expr
+parseParensTupleOrExpr = do
+  args <- parseExpr `sepBy1` lexeme (char ',')
+  lexeme $ char ')'
+  case args of
+    [x] -> pure x
+    _ -> let n = length args
+             tagName = Tag $ T.pack $ "Tuple" ++ show n
+         in pure $ foldl ExprApplication (ExprConstructor tagName (Arity n)) args
+
+parseParensLeftSection :: Parser Expr
+parseParensLeftSection = do
+  first <- parseExprApplication
+  op <- lexeme $ try $ some operatorChar
+  lexeme $ char ')'
+  let opName = Name $ T.pack op
+  pure $ ExprLambda (Name "sectionVar") $
+    ExprApplication (ExprApplication (ExprVariable opName) first) (ExprVariable (Name "sectionVar"))
 
 parseOperatorExpr :: Parser Expr
 parseOperatorExpr = do
