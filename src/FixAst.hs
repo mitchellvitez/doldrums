@@ -18,7 +18,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 fixAst :: Program a -> Program a
-fixAst = desugarProgram . fixArities . checkUniqueness . combineFunctions
+fixAst = filterReachable . desugarProgram . fixArities . checkUniqueness . combineFunctions
 
 -- group functions by name and combine pattern-matching clauses into one
 combineFunctions :: Program a -> Program a
@@ -146,6 +146,29 @@ findDuplicate seen (x:xs) =
   then Just x
   else findDuplicate (Set.insert x seen) xs
 
+-- REACHABILITY --
+
+filterReachable :: Program a -> Program a
+filterReachable program@Program{..}
+  | Name "main" `Set.notMember` functionNames = program
+  | otherwise = program
+      { functions = filter ((`Set.member` live) . name) functions
+      , typeSignatures = filter (\(name, _) -> name `Set.member` live) typeSignatures
+      }
+  where
+    functionNames = Set.fromList $ map name functions
+    live = until (\s -> step s == s) step $
+      Set.singleton (Name "main") `Set.union`
+      Set.unions (concatMap (map (refs . snd) . instanceMethods) instanceDeclarations)
+    step s = s `Set.union` Set.unions (map (refs . body) $ filter ((`Set.member` s) . name) functions)
+    refs (AnnExprVariable _ name)
+      | name `Set.member` functionNames = Set.singleton name
+      | otherwise = Set.empty
+    refs (AnnExprApplication _ f x) = refs f `Set.union` refs x
+    refs (AnnExprLet _ bindings body) = Set.unions (map (refs . snd) bindings) `Set.union` refs body
+    refs (AnnExprLambda _ _ expr) = refs expr
+    refs (AnnExprCase _ scrutinee alts) = refs scrutinee `Set.union` Set.unions [refs body | Alternative _ body <- alts]
+    refs _ = Set.empty
 
 -- DESUGARING --
 
