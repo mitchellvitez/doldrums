@@ -28,6 +28,7 @@ common warnings
 library
   import: warnings
   exposed-modules:
+      Derive
       FixAst
       Graphviz
       Interpret

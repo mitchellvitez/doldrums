@@ -6,6 +6,7 @@ import Language
 
 import Control.Monad.Combinators.Expr
 import Control.Monad (void)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
@@ -173,12 +174,25 @@ parseDataDeclaration = do
   typeVars <- many parseName
   lexeme $ char '='
   constructors <- parseConstructorDeclaration `sepBy1` lexeme (char '|')
-  pure $ DataDeclaration constructors (DataType $ unTag dataTy) typeVars
+  derivingClauses <- fromMaybe [] <$> optional (try (spaceConsumerNewline *> parseDeriving))
+  pure $ DataDeclaration constructors (DataType $ unTag dataTy) typeVars derivingClauses
+
+parseDeriving :: Parser [Name]
+parseDeriving = do
+  lexeme $ string "deriving"
+  try parseDerivingList <|> fmap pure (Name . unTag <$> parseTag)
+
+parseDerivingList :: Parser [Name]
+parseDerivingList = do
+  lexeme $ char '('
+  names <- (Name . unTag <$> parseTag) `sepBy1` lexeme (char ',')
+  lexeme $ char ')'
+  pure names
 
 parseConstructorDeclaration :: Parser (Tag, [TypeRef])
 parseConstructorDeclaration = do
   tag <- parseTag
-  argTypes <- many parseTypeRef
+  argTypes <- many (try parseTypeRef)
   pure (tag, argTypes)
 
 parseTypeRef :: Parser TypeRef
@@ -593,4 +607,5 @@ keywords = Set.fromList
   , "if"
   , "then"
   , "else"
+  , "deriving"
   ]

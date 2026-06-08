@@ -231,26 +231,16 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
     "-"  -> numBinOp (-) (-) a b
     "*"  -> numBinOp (*) (*) a b
     "/"  -> numBinOp (div) (/) a b
-    -- comparision operators (==, /=, <, >, <=, >=) are desugared into a `case` on the `compare` primitive
-    "compare" -> comparePrim a b
-    -- && and || are already desugared into `case` expressions
-    _    -> do
-      mMethod <- gets (Map.lookup (Name op) . methodEnv)
-      case mMethod of
-        Just dispatchTable -> do
-          afterA <- applyValue (ValMethodDispatch (Name op) dispatchTable) a
-          applyValue afterA b
-        Nothing -> do
-          currentEnv <- gets env
-          case Map.lookup (Name op) currentEnv of
-            Just tid -> do
-              funcVal <- force tid
-              afterA <- applyValue funcVal a
-              applyValue afterA b
-            Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
+    -- equality dispatches through method system; primitives handled directly
+    "==" -> eqNeqFallback "==" a b
+    "/=" -> eqNeqFallback "/=" a b
+    -- compare: try primitive first, then method dispatch
+    "compare" -> compareFallback a b
+    _    -> doMethodBinaryOp op a b
+
 -- unary operations
 whnf (ExprApplication (ExprVariable (Name op)) arg)
-  | op == "show" = showPrim arg
+  | op == "show" = methodUnaryOp "show" arg showPrim
   | op == "words" = wordsPrim arg
   | op == "lines" = linesPrim arg
   | op == "unwords" = unwordsPrim arg
@@ -270,6 +260,7 @@ whnf (ExprApplication (ExprVariable (Name op)) arg)
               funcVal <- force tid
               applyValue funcVal arg
             Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> op
+
 -- function applications
 whnf (ExprApplication func arg) = do
   funcVal <- whnf func
@@ -327,6 +318,67 @@ whnf (ExprCase scrutinee alts) = do
           withEnv patternEnv $ whnf altBody
 -- the above should be exhaustive
 whnf x = error $ "Failed pattern match exhaustiveness: " <> show x
+
+-- primitive equality for Int/Double/String, otherwise instance method
+eqNeqFallback :: Text -> Expr -> Expr -> State EvalState Value
+eqNeqFallback op a b = do
+  valA <- whnf a
+  valB <- whnf b
+  let boolResult v = pure $ ValConstructor (if v then Tag "True" else Tag "False") (Arity 0)
+  case (valA, valB) of
+    (ValLiteral (LiteralInt n), ValLiteral (LiteralInt m)) ->
+      boolResult $ case op of "==" -> n == m; _ -> n /= m
+    (ValLiteral (LiteralDouble x), ValLiteral (LiteralDouble y)) ->
+      boolResult $ case op of "==" -> x == y; _ -> x /= y
+    (ValLiteral (LiteralString s), ValLiteral (LiteralString t)) ->
+      boolResult $ case op of "==" -> s == t; _ -> s /= t
+    _ -> doMethodBinaryOp op a b
+
+-- primitive compare for Int/Double/String, otherwise instance method
+compareFallback :: Expr -> Expr -> State EvalState Value
+compareFallback a b = do
+  valA <- whnf a
+  valB <- whnf b
+  case (valA, valB) of
+    (ValLiteral (LiteralInt rawA), ValLiteral (LiteralInt rawB)) -> do
+      let result = compare rawA rawB
+      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
+    (ValLiteral (LiteralDouble rawA), ValLiteral (LiteralDouble rawB)) -> do
+      let result = compare rawA rawB
+      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
+    (ValLiteral (LiteralString rawA), ValLiteral (LiteralString rawB)) -> do
+      let result = compare rawA rawB
+      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
+    _ -> doMethodBinaryOp "compare" a b
+
+doMethodBinaryOp :: Text -> Expr -> Expr -> State EvalState Value
+doMethodBinaryOp op a b = do
+  mMethod <- gets (Map.lookup (Name op) . methodEnv)
+  case mMethod of
+    Just dispatchTable -> do
+      afterA <- applyValue (ValMethodDispatch (Name op) dispatchTable) a
+      applyValue afterA b
+    Nothing -> do
+      currentEnv <- gets env
+      case Map.lookup (Name op) currentEnv of
+        Just tid -> do
+          funcVal <- force tid
+          afterA <- applyValue funcVal a
+          applyValue afterA b
+        Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
+
+methodUnaryOp :: Text -> Expr -> (Expr -> State EvalState Value) -> State EvalState Value
+methodUnaryOp op arg fallback = do
+  mMethod <- gets (Map.lookup (Name op) . methodEnv)
+  case mMethod of
+    Just dispatchTable -> do
+      argVal <- whnf arg
+      tmap <- gets typeMap
+      let tag = valueTypeTag argVal tmap
+      case Map.lookup tag dispatchTable of
+        Just _  -> applyValue (ValMethodDispatch (Name op) dispatchTable) arg
+        Nothing -> fallback arg
+    Nothing -> fallback arg
 
 -- applies a Value to a single Expr argument (always single due to currying)
 applyValue :: Value -> Expr -> State EvalState Value
@@ -388,22 +440,6 @@ strBinOp a b = do
     (ValLiteral (LiteralString rawA), ValLiteral (LiteralString rawB)) ->
       pure . ValLiteral . LiteralString $ rawA <> rawB
     _ -> throw $ RuntimeException "Type error in string concatenation"
-
-comparePrim :: Expr -> Expr -> State EvalState Value
-comparePrim a b = do
-  valA <- whnf a
-  valB <- whnf b
-  case (valA, valB) of
-    (ValLiteral (LiteralInt rawA), ValLiteral (LiteralInt rawB)) -> do
-      let result = compare rawA rawB
-      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
-    (ValLiteral (LiteralDouble rawA), ValLiteral (LiteralDouble rawB)) -> do
-      let result = compare rawA rawB
-      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
-    (ValLiteral (LiteralString rawA), ValLiteral (LiteralString rawB)) -> do
-      let result = compare rawA rawB
-      pure $ ValConstructor (Tag $ tshow result) (Arity 0)
-    _ -> throw $ RuntimeException "Invalid argument to compare"
 
 showPrim :: Expr -> State EvalState Value
 showPrim a = do

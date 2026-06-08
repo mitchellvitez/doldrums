@@ -9,6 +9,7 @@ module FixAst
 where
 
 import Language
+import Derive (deriveInstances)
 import Data.List
 import Data.Maybe
 import Data.Set (Set)
@@ -18,7 +19,15 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 fixAst :: Program a -> Program a
-fixAst = filterReachable . desugarProgram . fixArities . checkUniqueness . combineFunctions
+fixAst = filterReachable . desugarProgram . fixArities . checkUniqueness . combineFunctions . deriveProgram
+
+-- generate instance declaration code from `deriving` clauses
+deriveProgram :: Program a -> Program a
+deriveProgram program@Program{..} =
+  let derived = map adjustAnnotation $ concatMap deriveInstances dataDeclarations
+      adjustAnnotation instanceDeclaration@InstanceDeclaration{..} =
+        instanceDeclaration { instanceMethods = [(name, fmap (const (error "derive")) method) | (name, method) <- instanceMethods] }
+  in program { instanceDeclarations = instanceDeclarations <> derived }
 
 -- group functions by name and combine pattern-matching clauses into one
 combineFunctions :: Program a -> Program a
@@ -116,10 +125,10 @@ fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities
 
 lookupTag :: [DataDeclaration] -> Tag -> Arity
 lookupTag [] tag = error $ "Could not find constructor: " <> show tag
-lookupTag (DataDeclaration [] _dataType _typeParams : rest) tag = lookupTag rest tag
-lookupTag (DataDeclaration ((x, typeRefs):xs) dataType typeParams : rest) tag
+lookupTag (DataDeclaration [] _dataType _typeParams _deriv : rest) tag = lookupTag rest tag
+lookupTag (DataDeclaration ((x, typeRefs):xs) dataType typeParams deriv : rest) tag
   | tag == x = Arity $ length typeRefs
-  | otherwise = lookupTag (DataDeclaration xs dataType typeParams : rest) tag
+  | otherwise = lookupTag (DataDeclaration xs dataType typeParams deriv : rest) tag
 
 
 -- UNIQUENESS --
@@ -191,12 +200,6 @@ desugarRules = \case
       , Alternative (PatternConstructor (Tag "True") []) $ exprTrue ann
       ]
 
-  -- a == b  ~>  case compare a b of { LT -> False; EQ -> True; GT -> False }
-  BinOp ann a b "==" ->
-    desugarComparisonOperator ann a b (False, True, False)
-  -- a /= b  ~>  case compare a b of { LT -> True; EQ -> False; GT -> True }
-  BinOp ann a b "/=" ->
-    desugarComparisonOperator ann a b (True, False, True)
   -- etc.
   BinOp ann a b "<" ->
     desugarComparisonOperator ann a b (True, False, False)

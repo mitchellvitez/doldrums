@@ -369,11 +369,11 @@ typeInference program programText = do
     initialFunctionTypes (Program (Function _ name args _ : restFuncs) datas sigs cls instances) n =
       (name, Scheme [] [] $ functionType n (Arity $ length args) Nothing)
         : initialFunctionTypes (Program restFuncs datas sigs cls instances) (n+1)
-    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams : restDatas) sigs cls instances) n =
+    initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams _ : restDatas) sigs cls instances) n =
       initialFunctionTypes (Program funcs restDatas sigs cls instances) n
-    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams : restDatas) sigs cls instances) n =
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams deriv : restDatas) sigs cls instances) n =
       (Name $ unTag x, constructorScheme typeParams typeRefs dataTy)
-      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams : restDatas) sigs cls instances) (n+1)
+      : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams deriv : restDatas) sigs cls instances) (n+1)
 
     constructorScheme :: [Name] -> [TypeRef] -> DataType -> Scheme
     constructorScheme typeParams typeRefs dataTy =

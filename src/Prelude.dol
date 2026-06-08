@@ -1,20 +1,33 @@
 -- useful types
 
 data Bool = True | False
+  deriving (Eq, Ord, Show)
 
 data Ordering = LT | EQ | GT
+  deriving (Eq, Ord, Show)
 
 data Unit = Unit
+  deriving (Eq, Ord, Show)
 
 data Maybe a = Nothing | Just a
+  deriving (Eq, Ord, Show)
 
 data Either a b = Left a | Right b
+  deriving (Eq, Ord, Show)
 
 data List a = Nil | Cons a (List a)
+  deriving (Eq, Ord, Show)
 
 class Eq a where
   (==) :: a -> a -> Bool
   (/=) :: a -> a -> Bool
+
+class Ord a where
+  compare :: a -> a -> Ordering
+  (>) :: a -> a -> Bool
+  (<) :: a -> a -> Bool
+  (>=) :: a -> a -> Bool
+  (<=) :: a -> a -> Bool
 
 class Show a where
   show :: a -> String
@@ -25,13 +38,6 @@ class Num a where
   (*) :: a -> a -> a
   (/) :: a -> a -> a
   negate :: a -> a
-
-class Ord a where
-  compare :: a -> a -> Ordering
-  (>) :: a -> a -> Bool
-  (<) :: a -> a -> Bool
-  (>=) :: a -> a -> Bool
-  (<=) :: a -> a -> Bool
 
 class Semigroup a where
   (<>) :: a -> a -> a

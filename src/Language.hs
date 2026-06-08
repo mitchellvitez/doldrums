@@ -55,6 +55,8 @@ data DataDeclaration = DataDeclaration
   , dataType :: DataType
   -- forall [a, b]. ...
   , typeParameters :: [Name]
+  -- deriving (Eq, Show, Ord)
+  , derivingClauses :: [Name]
   }
   deriving (Eq, Show)
 
