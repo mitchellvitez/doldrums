@@ -1,0 +1,3 @@
+-- EXPECT 4
+
+main = ceiling 3.7

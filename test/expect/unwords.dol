@@ -1,0 +1,3 @@
+-- EXPECT hello world
+
+main = unwords (Cons "hello" (Cons "world" Nil))

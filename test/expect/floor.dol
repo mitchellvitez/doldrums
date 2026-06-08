@@ -1,0 +1,3 @@
+-- EXPECT 3
+
+main = floor 3.7

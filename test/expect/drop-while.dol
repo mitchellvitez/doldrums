@@ -1,0 +1,3 @@
+-- EXPECT Cons 3 (Cons 4 (Cons 1 Nil))
+
+main = dropWhile (\x -> x < 3) [1, 2, 3, 4, 1]

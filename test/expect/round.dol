@@ -1,0 +1,3 @@
+-- EXPECT 4
+
+main = round 3.7

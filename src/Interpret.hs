@@ -10,7 +10,6 @@ where
 import Language
 
 import Data.List (find)
-import Data.Maybe (fromMaybe)
 import Control.Exception
 import Control.Monad (forM, when)
 import Control.Monad.State
@@ -252,6 +251,13 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
 -- unary operations
 whnf (ExprApplication (ExprVariable (Name op)) arg)
   | op == "show" = showPrim arg
+  | op == "words" = wordsPrim arg
+  | op == "lines" = linesPrim arg
+  | op == "unwords" = unwordsPrim arg
+  | op == "unlines" = unlinesPrim arg
+  | op == "floor" = floorPrim arg
+  | op == "ceiling" = ceilingPrim arg
+  | op == "round" = roundPrim arg
   | otherwise    = do
       mMethod <- gets (Map.lookup (Name op) . methodEnv)
       case mMethod of
@@ -276,19 +282,30 @@ whnf (ExprCase scrutinee alts) = do
       let
         matchingAlt = find (\(Alternative pat _) -> case pat of
           PatternConstructor altTag _ -> altTag == tag
+          PatternVar _ -> True
+          PatternWildcard -> True
           _ -> False) alts
-        (argPats, altBody) = case fromMaybe (throw $ RuntimeException $ "Non-exhaustive patterns for tag: " <> unTag tag) matchingAlt of
-          Alternative (PatternConstructor _ argPatPats) altPatBody -> (argPatPats, altPatBody)
-          _ -> throw $ RuntimeException "Unexpected pattern type"
-      when (length argThunks /= unArity arity) $
-        throw $ RuntimeException $ "Constructor not fully applied: " <> unTag tag
-      when (length argPats /= length argThunks) $
-        throw $ RuntimeException $ "Pattern arity mismatch for constructor: " <> unTag tag
-      let argNames = concatMap patternNames argPats
-      -- bind pattern variables to the constructor's argument thunks
-      currentEnv <- gets env
-      let patternEnv = foldr (\(n, t) e -> Map.insert n t e) currentEnv (zip argNames argThunks)
-      withEnv patternEnv $ whnf altBody
+        altList = [unTag t | Alternative (PatternConstructor t _) _ <- alts]
+      case matchingAlt of
+        Just (Alternative (PatternConstructor _ argPats) altBody) -> do
+          when (length argThunks /= unArity arity) $
+            throw $ RuntimeException $ "Constructor not fully applied: " <> unTag tag
+          when (length argPats /= length argThunks) $
+            throw $ RuntimeException $ "Pattern arity mismatch for constructor: " <> unTag tag
+          let argNames = concatMap patternNames argPats
+          currentEnv <- gets env
+          let patternEnv = foldr (\(n, t) e -> Map.insert n t e) currentEnv (zip argNames argThunks)
+          withEnv patternEnv $ whnf altBody
+        Just (Alternative (PatternVar n) altBody) -> do
+          currentEnv <- gets env
+          tid <- newThunkInCurrentEnv scrutinee
+          let patternEnv = Map.insert n tid currentEnv
+          withEnv patternEnv $ whnf altBody
+        Just (Alternative PatternWildcard altBody) -> do
+          whnf altBody
+        Nothing ->
+          throw $ RuntimeException $ T.concat ["Non-exhaustive patterns for tag: ", unTag tag, " (available: ", T.intercalate ", " altList, ")"]
+        _ -> throw $ RuntimeException "Unexpected pattern type"
     Left _ -> do
       let
         matchingAlt = find (\(Alternative pat _) -> case pat of
@@ -393,6 +410,75 @@ showPrim a = do
   val <- whnf a
   str <- unpackValue val
   pure . ValLiteral $ LiteralString str
+
+buildStringListExpr :: [Text] -> Expr
+buildStringListExpr = foldr (\s acc ->
+  ExprApplication
+    (ExprApplication
+      (ExprConstructor (Tag "Cons") (Arity 2))
+      (ExprLiteral (LiteralString s)))
+    acc
+  ) (ExprConstructor (Tag "Nil") (Arity 0))
+
+extractStringList :: Value -> State EvalState [Text]
+extractStringList v = case unApply v [] of
+  Right (Tag "Nil", _, []) -> pure []
+  Right (Tag "Cons", _, [h, t]) -> do
+    headVal <- force h
+    headStr <- case headVal of
+      ValLiteral (LiteralString s) -> pure s
+      _ -> throw $ RuntimeException "Expected String in list"
+    tailVal <- force t
+    tailStrs <- extractStringList tailVal
+    pure (headStr : tailStrs)
+  _ -> throw $ RuntimeException "Expected a list of strings"
+
+wordsPrim :: Expr -> State EvalState Value
+wordsPrim a = do
+  val <- whnf a
+  case val of
+    ValLiteral (LiteralString s) -> whnf $ buildStringListExpr (T.words s)
+    _ -> throw $ RuntimeException "words expects a String"
+
+linesPrim :: Expr -> State EvalState Value
+linesPrim a = do
+  val <- whnf a
+  case val of
+    ValLiteral (LiteralString s) -> whnf $ buildStringListExpr (T.lines s)
+    _ -> throw $ RuntimeException "lines expects a String"
+
+unwordsPrim :: Expr -> State EvalState Value
+unwordsPrim a = do
+  val <- whnf a
+  strs <- extractStringList val
+  pure . ValLiteral . LiteralString $ T.unwords strs
+
+unlinesPrim :: Expr -> State EvalState Value
+unlinesPrim a = do
+  val <- whnf a
+  strs <- extractStringList val
+  pure . ValLiteral . LiteralString $ T.unlines strs
+
+floorPrim :: Expr -> State EvalState Value
+floorPrim a = do
+  val <- whnf a
+  case val of
+    ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ floor d
+    _ -> throw $ RuntimeException "floor expects a Double"
+
+ceilingPrim :: Expr -> State EvalState Value
+ceilingPrim a = do
+  val <- whnf a
+  case val of
+    ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ ceiling d
+    _ -> throw $ RuntimeException "ceiling expects a Double"
+
+roundPrim :: Expr -> State EvalState Value
+roundPrim a = do
+  val <- whnf a
+  case val of
+    ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ round d
+    _ -> throw $ RuntimeException "round expects a Double"
 
 unpackValue :: Value -> State EvalState Text
 unpackValue (ValLiteral (LiteralInt n)) = pure $ tshow n

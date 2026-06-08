@@ -1,0 +1,3 @@
+-- EXPECT Cons 7 (Cons 7 (Cons 7 Nil))
+
+main = take 3 $ repeat 7

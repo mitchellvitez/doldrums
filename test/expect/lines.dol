@@ -1,0 +1,3 @@
+-- EXPECT Cons hello (Cons world Nil)
+
+main = lines "hello\nworld"

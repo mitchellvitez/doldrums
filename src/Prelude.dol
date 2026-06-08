@@ -128,19 +128,23 @@ null :: List a -> Bool
 null Nil = True
 null (Cons _ _) = False
 
-take :: List a -> Int -> List a
-take list n = case n <= 0 of
-  True -> list
+take :: Int -> [a] -> [a]
+take n list = case n <= 0 of
+  True -> []
   False -> case list of
-    Nil -> Nil
-    Cons x xs -> Cons x $ take (n - 1) xs
+    [] -> []
+    (x:xs) -> x : take (n - 1) xs
 
-drop :: List a -> Int -> List a
-drop list n = case n <= 0 of
+append :: List a -> List a -> List a
+append [] ys = ys
+append (x:xs) ys = x : append xs ys
+
+drop :: Int -> [a] -> [a]
+drop n list = case n <= 0 of
   True -> list
   False -> case list of
-    Nil -> Nil
-    Cons x xs -> drop (n - 1) xs
+    [] -> []
+    (x:xs) -> drop (n - 1) xs
 
 elem :: a -> List a -> Bool
 elem x Nil = False
@@ -214,3 +218,36 @@ enumFromThenTo :: Int -> Int -> Int -> List Int
 enumFromThenTo start next end
   | start <= end = start : enumFromThenTo next (next + next - start) end
   | otherwise = []
+
+takeWhile :: (a -> Bool) -> List a -> List a
+takeWhile p [] = []
+takeWhile p (x:xs)
+  | p x = x : takeWhile p xs
+  | otherwise = []
+
+dropWhile :: (a -> Bool) -> List a -> List a
+dropWhile p [] = []
+dropWhile p (x:xs)
+  | p x = dropWhile p xs
+  | otherwise = x : xs
+
+words :: String -> List String
+lines :: String -> List String
+unwords :: List String -> String
+unlines :: List String -> String
+
+replicate :: Int -> a -> List a
+replicate n x
+  | n <= 0 = []
+  | otherwise = x : replicate (n - 1) x
+
+repeat :: a -> [a]
+repeat x = x : repeat x
+
+cycle :: [a] -> [a]
+cycle [] = []
+cycle (x:xs) = x : cycle (append xs [x])
+
+floor :: Double -> Int
+ceiling :: Double -> Int
+round :: Double -> Int
