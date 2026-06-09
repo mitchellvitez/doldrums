@@ -202,11 +202,26 @@ parseDerivingList = do
   lexeme $ char ')'
   pure names
 
-parseConstructorDeclaration :: Parser (Tag, [TypeRef])
+parseConstructorDeclaration :: Parser (Tag, [ConstructorArg])
 parseConstructorDeclaration = do
   tag <- parseTag
-  argTypes <- many (try parseTypeRef)
-  pure (tag, argTypes)
+  try (parseRecordConstructorArgs tag) <|> do
+    argTypes <- many (try parseTypeRef)
+    pure (tag, map PositionalArg argTypes)
+
+parseRecordConstructorArgs :: Tag -> Parser (Tag, [ConstructorArg])
+parseRecordConstructorArgs tag = do
+  lexeme $ char '{'
+  fields <- parseRecordField `sepBy1` lexeme (char ',')
+  lexeme $ char '}'
+  pure (tag, map (uncurry NamedArg) fields)
+
+parseRecordField :: Parser (Name, TypeRef)
+parseRecordField = do
+  name <- parseName
+  lexeme $ string "::"
+  ty <- parseTypeRef
+  pure (name, ty)
 
 parseTypeRef :: Parser TypeRef
 parseTypeRef = do
@@ -246,8 +261,11 @@ parseOperator = makeExprParser parseExprApplication opTable
 opTable :: [[Operator Parser Expr]]
 opTable =
   [
-  -- level 9
-    [ binaryOp "." InfixR
+  -- level 10: record field access (postfix, no space before name)
+    [ postfixFieldOp
+    ]
+  -- level 9: function composition (binary)
+  , [ binaryOp "." InfixR
     ]
   -- level 8
   , [ backtickOp
@@ -283,6 +301,14 @@ opTable =
   , [ binaryOp "$" InfixR
     ]
   ]
+
+postfixFieldOp :: Operator Parser Expr
+postfixFieldOp = Postfix $ try $ do
+  -- match .name (no whitespace required before dot, but dot must be followed by a name)
+  void $ char '.'
+  name <- parseName
+  let con = ExprConstructor (Tag "__dot__") (Arity 0)
+  pure $ \expr -> ExprApplication (ExprApplication con expr) (ExprLiteral (LiteralString (unName name)))
 
 binaryOp :: Text -> (Parser (Expr -> Expr -> Expr) -> Operator Parser Expr) -> Operator Parser Expr
 binaryOp name fixity =
@@ -375,8 +401,33 @@ parseAtomicPattern =
   PatternWildcard <$ lexeme (char '_') <|>
   PatternLiteral <$> parseLiteral <|>
   try parseListPattern <|>
+  try parseRecordPattern <|>
+  try parseRecordWildcardPattern <|>
   PatternConstructor <$> parseTag <*> many parsePattern <|>
   parseParenPattern
+
+parseRecordPattern :: Parser Pattern
+parseRecordPattern = do
+  tag <- parseTag
+  lexeme $ char '{'
+  fields <- parseRecordPatternField `sepBy1` lexeme (char ',')
+  lexeme $ char '}'
+  pure $ PatternRecord tag fields
+
+parseRecordWildcardPattern :: Parser Pattern
+parseRecordWildcardPattern = do
+  tag <- parseTag
+  lexeme $ char '{'
+  lexeme $ string ".."
+  lexeme $ char '}'
+  pure $ PatternRecordWildcard tag
+
+parseRecordPatternField :: Parser (Name, Pattern)
+parseRecordPatternField = do
+  name <- parseName
+  lexeme $ char '='
+  pat <- parsePattern
+  pure (name, pat)
 
 parseParenPattern :: Parser Pattern
 parseParenPattern = do
@@ -444,16 +495,68 @@ parseExprLambdaStandard = do
 parseExprApplication :: Parser Expr
 parseExprApplication = do
   (firstExpr:restExprs) <- some parseAtomicExpr
-  pure $ Prelude.foldl ExprApplication firstExpr restExprs
+  if null restExprs
+    then try (parseRecordUpdateExpr firstExpr) <|> pure firstExpr
+    else do
+      lastExpr' <- try (parseRecordUpdateExpr (last restExprs)) <|> pure (last restExprs)
+      pure $ foldl ExprApplication firstExpr (init restExprs ++ [lastExpr'])
+
+parseRecordUpdateExpr :: Expr -> Parser Expr
+parseRecordUpdateExpr expr = do
+  fields <- parseRecordExprFields
+  let con = ExprConstructor (Tag "__upd__") (Arity 0)
+      encodedArgs = concat [[ExprLiteral (LiteralString (unName n)), e] | (n, e) <- fields]
+  pure $ foldl ExprApplication (ExprApplication con expr) encodedArgs
 
 parseAtomicExpr :: Parser Expr
 parseAtomicExpr =
   parseExprVariable <|>
   parseExprLiteral <|>
+  try parseRecordConstruction <|>
+  try parseRecordWildcardExpr <|>
   parseExprConstructor <|>
   try parseOperatorExpr <|>
   try parseListExpr <|>
   parseExprParenthesized
+
+parseRecordConstruction :: Parser Expr
+parseRecordConstruction = do
+  tag <- parseTag
+  fields <- parseRecordExprFields
+  let syntheticTag = Tag $ "__rec_" <> unTag tag
+      con = ExprConstructor syntheticTag (Arity 0)
+      encodedArgs = concat [[ExprLiteral (LiteralString (unName n)), e] | (n, e) <- fields]
+  pure $ foldl ExprApplication con encodedArgs
+
+parseRecordWildcardExpr :: Parser Expr
+parseRecordWildcardExpr = do
+  tag <- parseTag
+  lexeme $ char '{'
+  lexeme $ string ".."
+  lexeme $ char '}'
+  let con = ExprConstructor (Tag "__wc__") (Arity 0)
+  pure $ ExprApplication con (ExprLiteral (LiteralString (unTag tag)))
+
+parseRecordExprFields :: Parser [(Name, Expr)]
+parseRecordExprFields = do
+  lexeme $ char '{'
+  fields <- parseRecordExprField `sepBy1` lexeme (char ',')
+  lexeme $ char '}'
+  pure fields
+
+parseRecordExprField :: Parser (Name, Expr)
+parseRecordExprField = do
+  name <- parseName
+  lexeme $ char '='
+  expr <- parseExpr
+  pure (name, expr)
+
+parseRecordUpdate :: Parser (Expr -> Expr)
+parseRecordUpdate = do
+  fields <- parseRecordExprFields
+  let con = ExprConstructor (Tag "__upd__") (Arity 0)
+      encodedArgs = concat [[ExprLiteral (LiteralString (unName n)), e] | (n, e) <- fields]
+  pure $ \expr -> foldl ExprApplication (ExprApplication con expr) encodedArgs
 
 parseExprVariable :: Parser Expr
 parseExprVariable = ExprVariable <$> parseName

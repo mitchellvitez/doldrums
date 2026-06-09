@@ -1,0 +1,8 @@
+-- EXPECT 42
+
+data Foo = Foo { bar :: Int, baz :: String }
+
+f x = case x of
+  Foo{..} -> bar
+
+main = f (Foo 42 "hello")

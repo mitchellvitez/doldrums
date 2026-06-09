@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module FixAst
@@ -10,6 +9,7 @@ where
 
 import Language
 import Derive (deriveInstances)
+import Desugar (desugarProgram)
 import Data.List
 import Data.Maybe
 import Data.Set (Set)
@@ -19,7 +19,40 @@ import Data.Text (Text)
 import qualified Data.Text as T
 
 fixAst :: Program a -> Program a
-fixAst = filterReachable . desugarProgram . fixArities . checkUniqueness . combineFunctions . deriveProgram
+fixAst =
+  filterReachable .
+  fixArities .
+  desugarProgram .
+  checkUniqueness .
+  combineFunctions .
+  deriveProgram .
+  generateRecordAccessors
+
+generateRecordAccessors :: Program a -> Program a
+generateRecordAccessors program@Program{..} =
+  let accessors = map (fmap (const (error "accessor"))) $ concatMap genAccessorsForDataDecl dataDeclarations
+  in program { functions = functions <> accessors }
+
+genAccessorsForDataDecl :: DataDeclaration -> [Function ()]
+genAccessorsForDataDecl dd =
+  [ let body = AnnExprVariable () (xArg tag fieldIdx)
+        numArgs = length $ constructorArgTypes args
+        patArgs = replicate numArgs PatternWildcard
+        patArgsWithField = replaceNth fieldIdx (PatternVar (xArg tag fieldIdx)) patArgs
+        patternArg = PatternConstructor tag patArgsWithField
+    in Function () fieldName [patternArg] body
+  | (tag, args) <- declarations dd
+  , isRecordConstructor args
+  , (fieldIdx, fieldName) <- zip [0..] (recordFieldNames args)
+  ]
+  where
+    xArg :: Tag -> Int -> Name
+    xArg (Tag t) i = Name $ "x_" <> t <> "_" <> T.pack (show i)
+
+replaceNth :: Int -> a -> [a] -> [a]
+replaceNth _ _ [] = []
+replaceNth 0 y (_:xs) = y : xs
+replaceNth n y (x:xs) = x : replaceNth (n-1) y xs
 
 -- generate instance declaration code from `deriving` clauses
 deriveProgram :: Program a -> Program a
@@ -36,7 +69,7 @@ combineFunctions program@Program{..} =
 
 -- allow for multiple definitions (i.e. multiple pattern matches with same function name)
 groupByName :: [Function a] -> [[Function a]]
-groupByName = Map.elems . Map.fromListWith (flip (++)) . map (\f -> (name f, [f]))
+groupByName = Map.elems . Map.fromListWith (flip (<>)) . map (\f -> (name f, [f]))
 
 combineGroup :: [Function a] -> [Function a]
 combineGroup [f] = [f]
@@ -68,6 +101,8 @@ buildClauses annot (var:vars) alts =
       patternGroupKey (PatternVar _) = CatchAllKey
       patternGroupKey (PatternLiteral l) = LiteralKey (T.pack $ show l)
       patternGroupKey (PatternConstructor t _) = ConstructorKey t
+      patternGroupKey (PatternRecord t _) = ConstructorKey t
+      patternGroupKey (PatternRecordWildcard t) = ConstructorKey t
 
       isCatchAllPattern PatternWildcard = True
       isCatchAllPattern (PatternVar _) = True
@@ -85,9 +120,9 @@ data PatternGroupKey = CatchAllKey | LiteralKey Text | ConstructorKey Tag
 -- convert Program to a single Expr (`let topLevelFunction = ... in main`)
 singleExprForm :: Program a -> AnnotatedExpr a
 singleExprForm program =
-  case partition (\f -> f.name == Name "main") program.functions of
+  case partition (\f -> name f == Name "main") (functions program) of
     ([], _) -> error "Couldn't find `main` function"
-    ([main], otherFunctions) -> foldl' toSingle main.body otherFunctions
+    ([main], otherFunctions) -> foldl' toSingle (body main) otherFunctions
     _ -> error "two or more `main` functions exist"
 
 toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
@@ -129,11 +164,12 @@ fixExprArities datas (AnnExprLambda a name expr) = AnnExprLambda a name (fixExpr
 fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities datas expr) $ map fixAlt alters
   where fixAlt (Alternative pat body) = Alternative pat $ fixExprArities datas body
 
+
 lookupTag :: [DataDeclaration] -> Tag -> Arity
 lookupTag [] tag = error $ "Could not find constructor: " <> show tag
 lookupTag (DataDeclaration [] _dataType _typeParams _deriv : rest) tag = lookupTag rest tag
-lookupTag (DataDeclaration ((x, typeRefs):xs) dataType typeParams deriv : rest) tag
-  | tag == x = Arity $ length typeRefs
+lookupTag (DataDeclaration ((x, args):xs) dataType typeParams deriv : rest) tag
+  | tag == x = Arity $ length args
   | otherwise = lookupTag (DataDeclaration xs dataType typeParams deriv : rest) tag
 
 
@@ -183,96 +219,6 @@ filterReachable program@Program{..}
     refs (AnnExprLet _ bindings body) = Set.unions (map (refs . snd) bindings) `Set.union` refs body
     refs (AnnExprLambda _ _ expr) = refs expr
     refs (AnnExprCase _ scrutinee alts) = refs scrutinee `Set.union` Set.unions [refs body | Alternative _ body <- alts]
+
     refs _ = Set.empty
 
--- DESUGARING --
-
--- | match on expressions, return `Just newExpr` if a desugaring rule applies
-desugarRules :: AnnotatedExpr a -> Maybe (AnnotatedExpr a)
-desugarRules = \case
-  -- x : xs  ~>  Cons x xs
-  AnnExprVariable ann (Name ":") ->
-    Just $ AnnExprConstructor ann (Tag "Cons") (Arity 2)
-  -- a && b  ~>  case a of { True -> b; False -> False }
-  BinOp ann a b "&&" ->
-    Just $ AnnExprCase ann a
-      [ Alternative (PatternConstructor (Tag "True") []) b
-      , Alternative (PatternConstructor (Tag "False") []) $ exprFalse ann
-      ]
-  -- a || b  ~>  case a of { False -> b; True -> True }
-  BinOp ann a b "||" ->
-    Just $ AnnExprCase ann a
-      [ Alternative (PatternConstructor (Tag "False") []) b
-      , Alternative (PatternConstructor (Tag "True") []) $ exprTrue ann
-      ]
-
-  -- etc.
-  BinOp ann a b "<" ->
-    desugarComparisonOperator ann a b (True, False, False)
-  BinOp ann a b ">" ->
-    desugarComparisonOperator ann a b (False, False, True)
-  BinOp ann a b "<=" ->
-    desugarComparisonOperator ann a b (True, True, False)
-  BinOp ann a b ">=" ->
-    desugarComparisonOperator ann a b (False, True, True)
-
-  -- if cond then t else e  ~>  case cond of { True -> t; False -> e }
-  AnnExprApplication ann
-    (AnnExprApplication _
-      (AnnExprApplication _ (AnnExprVariable _ (Name "if")) cond)
-      trueVal)
-    falseVal ->
-      Just $ AnnExprCase ann cond
-        [ Alternative (PatternConstructor (Tag "True") []) trueVal
-        , Alternative (PatternConstructor (Tag "False") []) falseVal
-        ]
-  _ -> Nothing
-
-pattern BinOp :: a -> AnnotatedExpr a -> AnnotatedExpr a -> Text -> AnnotatedExpr a
-pattern BinOp ann a b op <-
-  AnnExprApplication ann (AnnExprApplication _ (AnnExprVariable _ (Name op)) a) b
-
-desugarComparisonOperator :: a -> AnnotatedExpr a -> AnnotatedExpr a -> (Bool, Bool, Bool) -> Maybe (AnnotatedExpr a)
-desugarComparisonOperator ann a b (lt, eq, gt) =
-  Just $ AnnExprCase ann (AnnExprApplication ann (AnnExprApplication ann (AnnExprVariable ann "compare") a) b)
-    [ Alternative (PatternConstructor (Tag "LT") []) $ (toExprBool lt) ann
-    , Alternative (PatternConstructor (Tag "EQ") []) $ (toExprBool eq) ann
-    , Alternative (PatternConstructor (Tag "GT") []) $ (toExprBool gt) ann
-    ]
-
-toExprBool :: Bool -> a -> AnnotatedExpr a
-toExprBool False = exprFalse
-toExprBool True = exprTrue
-
-exprFalse :: a -> AnnotatedExpr a
-exprFalse ann = AnnExprConstructor ann (Tag "False") (Arity 0)
-
-exprTrue :: a -> AnnotatedExpr a
-exprTrue ann = AnnExprConstructor ann (Tag "True") (Arity 0)
-
-desugarProgram :: Program a -> Program a
-desugarProgram (Program funcs decls sigs cls insts) =
-  Program (map desugarFunction funcs) decls sigs cls (map desugarInstance insts)
-
-desugarFunction :: Function a -> Function a
-desugarFunction f = f { body = desugarExpr $ body f }
-
-desugarInstance :: InstanceDeclaration a -> InstanceDeclaration a
-desugarInstance (InstanceDeclaration ctx cls ty meths) =
-  InstanceDeclaration ctx cls ty [(n, desugarExpr m) | (n, m) <- meths]
-
-desugarExpr :: AnnotatedExpr a -> AnnotatedExpr a
-desugarExpr expr =
-  let mappedExpr = mapExpr desugarExpr expr
-  in case desugarRules mappedExpr of
-    Just desugaredExpr -> desugaredExpr
-    Nothing -> mappedExpr
-
-mapExpr :: (AnnotatedExpr a -> AnnotatedExpr a) -> AnnotatedExpr a -> AnnotatedExpr a
-mapExpr _ (AnnExprVariable a n) = AnnExprVariable a n
-mapExpr _ (AnnExprLiteral a l) = AnnExprLiteral a l
-mapExpr _ (AnnExprConstructor a tag arity) = AnnExprConstructor a tag arity
-mapExpr f (AnnExprApplication a e1 e2) = AnnExprApplication a (f e1) (f e2)
-mapExpr f (AnnExprLet a bindings body) = AnnExprLet a [(name, f binding) | (name, binding) <- bindings] (f body)
-mapExpr f (AnnExprLambda a n e) = AnnExprLambda a n (f e)
-mapExpr f (AnnExprCase a e alts) = AnnExprCase a (f e) (map (\(Alternative pat body) -> Alternative pat (f body)) alts)

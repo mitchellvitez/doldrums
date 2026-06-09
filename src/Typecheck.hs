@@ -238,7 +238,7 @@ typeCheckExpr env (AnnExprApplication sourcePos expr1 expr2) = do
 typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
   sigMap <- asks signatureMap
   newVars <- mapM (\name -> newTypeVar "a" >>= \var -> pure (name, Scheme [] [] var)) $ map fst bindings
-  let env = oldEnv <> TypeEnv (Map.fromList newVars)
+  let env = TypeEnv (Map.fromList newVars) <> oldEnv
   ty <- newTypeVar "a"
   foldM (foldStep sigMap env) (emptySubstitution, ty) bindings
   where
@@ -422,8 +422,8 @@ typeInference program programText = do
         : initialFunctionTypes (Program restFuncs datas sigs cls instances) (n+1)
     initialFunctionTypes (Program funcs (DataDeclaration [] _dataTy _typeParams _ : restDatas) sigs cls instances) n =
       initialFunctionTypes (Program funcs restDatas sigs cls instances) n
-    initialFunctionTypes (Program funcs (DataDeclaration ((x, typeRefs) : restDecls) dataTy typeParams deriv : restDatas) sigs cls instances) n =
-      (Name $ unTag x, constructorScheme typeParams typeRefs dataTy)
+    initialFunctionTypes (Program funcs (DataDeclaration ((x, args) : restDecls) dataTy typeParams deriv : restDatas) sigs cls instances) n =
+      (Name $ unTag x, constructorScheme typeParams (constructorArgTypes args) dataTy)
       : initialFunctionTypes (Program funcs (DataDeclaration restDecls dataTy typeParams deriv : restDatas) sigs cls instances) (n+1)
 
     constructorScheme :: [Name] -> [TypeRef] -> DataType -> Scheme
@@ -433,8 +433,14 @@ typeInference program programText = do
         schemeVars = typeParams <> [n | TypeRefVar n <- typeRefs]
         refToFn :: TypeRef -> Type -> Type
         refToFn (TypeRefVar name) = (TypeVariable name :->)
-        refToFn (TypeRefConstructor dt) = (TypeTagged dt :->)
-        refToFn (TypeRefApp dt _) = (TypeTagged dt :->)
+        refToFn (TypeRefConstructor dt) = (typeRefToType dt :->)
+        refToFn (TypeRefApp dt _) = (typeRefToType dt :->)
+
+        typeRefToType :: DataType -> Type
+        typeRefToType (DataType "Int") = TypeInt
+        typeRefToType (DataType "String") = TypeString
+        typeRefToType (DataType "Double") = TypeDouble
+        typeRefToType dt = TypeTagged dt
 
     functionType :: Int -> Arity -> Maybe DataType -> Type
     functionType n (Arity 0) mType = case mType of

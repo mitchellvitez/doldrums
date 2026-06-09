@@ -283,9 +283,9 @@ whnf (ExprCase scrutinee alts) = do
             throw $ RuntimeException $ "Constructor not fully applied: " <> unTag tag
           when (length argPats /= length argThunks) $
             throw $ RuntimeException $ "Pattern arity mismatch for constructor: " <> unTag tag
-          let argNames = concatMap patternNames argPats
+          let pairs = [(n, t) | (pat, t) <- zip argPats argThunks, n <- patternNames pat]
           currentEnv <- gets env
-          let patternEnv = foldr (\(n, t) e -> Map.insert n t e) currentEnv (zip argNames argThunks)
+          let patternEnv = foldr (\(n, t) e -> Map.insert n t e) currentEnv pairs
           withEnv patternEnv $ whnf altBody
         Just (Alternative (PatternVar n) altBody) -> do
           currentEnv <- gets env

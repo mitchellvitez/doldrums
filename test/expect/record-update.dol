@@ -1,0 +1,7 @@
+-- EXPECT 99
+
+data Foo = Foo { bar :: Int, baz :: String }
+
+f = Foo 42 "hello"
+
+main = bar f { bar = 99 }

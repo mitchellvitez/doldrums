@@ -21,7 +21,7 @@ deriveInstance _  name          = error $ "Cannot derive " <> T.unpack (unName n
 
 buildContext :: Name -> DataDeclaration -> [(Name, TypeHint)]
 buildContext className DataDeclaration{..} =
-  let usedParams = concatMap (\(_, refs) -> concatMap typeRefVars refs) declarations
+  let usedParams = concatMap (\(_, args) -> concatMap (typeRefVars . constructorArgType) args) declarations
       params = filter (`elem` usedParams) typeParameters
   in map (\n -> (className, TypeHintVar n)) params
 
@@ -59,13 +59,13 @@ deriveEq dd =
         ]
     }
 
-genEq :: [(Tag, [TypeRef])] -> AnnotatedExpr ()
+genEq :: [(Tag, [ConstructorArg])] -> AnnotatedExpr ()
 genEq constructors =
   let x = Name "x"
       y = Name "y"
   in exprLam x $ exprLam y $ eqCaseOnX constructors x y
 
-genNeq :: [(Tag, [TypeRef])] -> AnnotatedExpr ()
+genNeq :: [(Tag, [ConstructorArg])] -> AnnotatedExpr ()
 genNeq _ =
   let x = Name "x"
       y = Name "y"
@@ -73,7 +73,7 @@ genNeq _ =
       notExpr = exprApp (exprVar (Name "not")) eqExpr
   in exprLam x $ exprLam y $ notExpr
 
-eqCaseOnX :: [(Tag, [TypeRef])] -> Name -> Name -> AnnotatedExpr ()
+eqCaseOnX :: [(Tag, [ConstructorArg])] -> Name -> Name -> AnnotatedExpr ()
 eqCaseOnX constructors x y =
   exprCase (exprVar x)
     [ Alternative (PatternConstructor tag (map (PatternVar . xArg tag) [0..n-1]))
@@ -82,7 +82,7 @@ eqCaseOnX constructors x y =
     , let n = length args
     ]
 
-eqCaseOnY :: Tag -> Int -> [(Tag, [TypeRef])] -> Name -> AnnotatedExpr ()
+eqCaseOnY :: Tag -> Int -> [(Tag, [ConstructorArg])] -> Name -> AnnotatedExpr ()
 eqCaseOnY tg _ constructors y =
   exprCase (exprVar y)
     [ Alternative (PatternConstructor tag2 (map (PatternVar . yArg tag2) [0..n2-1]))
@@ -120,7 +120,7 @@ deriveOrd dd =
         ]
     }
 
-genCompare :: [(Tag, [TypeRef])] -> AnnotatedExpr ()
+genCompare :: [(Tag, [ConstructorArg])] -> AnnotatedExpr ()
 genCompare constructors =
   let x = Name "x"
       y = Name "y"
@@ -147,7 +147,7 @@ genOpFromCompareNe tag1 tag2 =
          , Alternative PatternWildcard boolFalse
          ]
 
-compareCaseOnX :: [(Tag, [TypeRef])] -> Name -> Name -> AnnotatedExpr ()
+compareCaseOnX :: [(Tag, [ConstructorArg])] -> Name -> Name -> AnnotatedExpr ()
 compareCaseOnX constructors x y =
   let tagOrder = Map.fromList (zip (map fst constructors) [0 :: Int ..])
   in exprCase (exprVar x)
@@ -157,7 +157,7 @@ compareCaseOnX constructors x y =
        , let n = length args
        ]
 
-compareCaseOnY :: Tag -> Int -> [(Tag, [TypeRef])] -> Name -> Map.Map Tag Int -> AnnotatedExpr ()
+compareCaseOnY :: Tag -> Int -> [(Tag, [ConstructorArg])] -> Name -> Map.Map Tag Int -> AnnotatedExpr ()
 compareCaseOnY tg _ constructors y tagOrder =
   exprCase (exprVar y)
     [ Alternative (PatternConstructor tag2 (map (PatternVar . yArg tag2) [0..n2-1]))
@@ -204,7 +204,7 @@ deriveShow dd =
         [(Name "show", genShow (declarations dd))]
     }
 
-genShow :: [(Tag, [TypeRef])] -> AnnotatedExpr ()
+genShow :: [(Tag, [ConstructorArg])] -> AnnotatedExpr ()
 genShow constructors =
   let x = Name "x"
   in exprLam x $ exprCase (exprVar x)

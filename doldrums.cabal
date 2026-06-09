@@ -29,15 +29,16 @@ library
   import: warnings
   exposed-modules:
       Derive
+      Desugar
       FixAst
       Graphviz
       Interpret
+      LLVM
       Language
       Lib
-      LLVM
       Parse
-      Typecheck
       STG
+      Typecheck
   other-modules:
       Paths_doldrums
   hs-source-dirs:

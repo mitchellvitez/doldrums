@@ -50,7 +50,7 @@ instance Functor Program where
 
 data DataDeclaration = DataDeclaration
   -- ... = [Nothing :: Maybe a, Just :: a -> Maybe a]
-  { declarations :: [(Tag, [TypeRef])]
+  { declarations :: [(Tag, [ConstructorArg])]
   -- data [Maybe] a = ...
   , dataType :: DataType
   -- forall [a, b]. ...
@@ -59,6 +59,28 @@ data DataDeclaration = DataDeclaration
   , derivingClauses :: [Name]
   }
   deriving (Eq, Show)
+
+-- arguments to data constructors (positional or named record fields)
+data ConstructorArg
+  = PositionalArg TypeRef
+  | NamedArg Name TypeRef
+  deriving (Eq, Show)
+
+constructorArgType :: ConstructorArg -> TypeRef
+constructorArgType (PositionalArg t) = t
+constructorArgType (NamedArg _ t) = t
+
+constructorArgTypes :: [ConstructorArg] -> [TypeRef]
+constructorArgTypes = map constructorArgType
+
+isRecordConstructor :: [ConstructorArg] -> Bool
+isRecordConstructor [] = False
+isRecordConstructor args = all isNamed args
+  where isNamed (NamedArg _ _) = True
+        isNamed _ = False
+
+recordFieldNames :: [ConstructorArg] -> [Name]
+recordFieldNames args = [n | NamedArg n _ <- args]
 
 -- arguments to data constructors
 data TypeRef
@@ -130,6 +152,8 @@ data Pattern
   | PatternWildcard
   | PatternLiteral Literal
   | PatternConstructor Tag [Pattern]
+  | PatternRecord Tag [(Name, Pattern)]     -- Foo { bar = p, baz = p }
+  | PatternRecordWildcard Tag               -- Foo { .. }
   deriving (Eq, Show)
 
 patternNames :: Pattern -> [Name]
@@ -137,6 +161,8 @@ patternNames PatternWildcard = []
 patternNames (PatternVar n) = [n]
 patternNames (PatternLiteral _) = []
 patternNames (PatternConstructor _ ps) = concatMap patternNames ps
+patternNames (PatternRecord _ fields) = concatMap (patternNames . snd) fields
+patternNames (PatternRecordWildcard _) = []
 
 -- case name, variables to unpack, body
 data CaseAlternative a = Alternative Pattern (AnnotatedExpr a)
@@ -212,17 +238,24 @@ instance Functor AnnotatedExpr where
 type Expr = AnnotatedExpr ()
 
 instance Show Expr where
-  show (ExprVariable name) = show name
-  show (ExprLiteral l) = show l
-  show (ExprConstructor tag arity) = "(Constr " <> show tag <> "," <> show arity <> ")"
-  show (ExprApplication a b) = "(App " <> show a <> " " <> show b <> ")"
-  show (ExprLet bindings body) = "(Let " <> show bindings <> " " <> show body <> ")"
-  show (ExprLambda name expr) = "(Lam " <> show name <> " " <> show expr <> ")"
-  show (ExprCase expr alts) = "(Case " <> show expr <> " " <> show alts <> ")"
-  show _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
+  show (AnnExprVariable _ name) = show name
+  show (AnnExprLiteral _ l) = show l
+  show (AnnExprConstructor _ tag arity) = "(Constr " <> show tag <> "," <> show arity <> ")"
+  show (AnnExprApplication _ a b) = "(App " <> show a <> " " <> show b <> ")"
+  show (AnnExprLet _ bindings body) = "(Let " <> show bindings <> " " <> show body <> ")"
+  show (AnnExprLambda _ name expr) = "(Lam " <> show name <> " " <> show expr <> ")"
+  show (AnnExprCase _ expr alts) = "(Case " <> show expr <> " " <> show alts <> ")"
 
 ignoreAnnotation :: AnnotatedExpr a -> Expr
 ignoreAnnotation = fmap (const ())
+
+-- | Collect the arguments of a left-nested application chain.
+-- e.g. App(App(App(f, x), y), z) => (f, [x, y, z])
+collectArgs :: AnnotatedExpr a -> (AnnotatedExpr a, [AnnotatedExpr a])
+collectArgs (AnnExprApplication _ f x) =
+  let (hd, args) = collectArgs f
+  in (hd, args ++ [x])
+collectArgs e = (e, [])
 
 pattern ExprLiteral :: Literal -> Expr
 pattern ExprLiteral n <- AnnExprLiteral _ n

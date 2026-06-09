@@ -1,0 +1,5 @@
+-- EXPECT 42
+
+data Foo = Foo { bar :: Int, baz :: String }
+
+main = bar (Foo { bar = 42, baz = "hello" })

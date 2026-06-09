@@ -105,11 +105,11 @@ main = negate $ negate 3
       testParser parseDataDeclaration "data Bool = True | False"
         (DataDeclaration [("True", []), ("False", [])] (DataType "Bool") [] [])
       testParser parseDataDeclaration "data Maybe a = Nothing | Just a"
-        (DataDeclaration [("Nothing", []), ("Just", [TypeRefVar "a"])] (DataType "Maybe") [Name "a"] [])
+        (DataDeclaration [("Nothing", []), ("Just", [PositionalArg (TypeRefVar "a")])] (DataType "Maybe") [Name "a"] [])
       testParser parseDataDeclaration "data Color = Red | Green | Blue deriving (Eq, Ord, Show)"
         (DataDeclaration [("Red", []), ("Green", []), ("Blue", [])] (DataType "Color") [] [Name "Eq", Name "Ord", Name "Show"])
       testParser parseDataDeclaration "data Tree a = Leaf a | Branch (Tree a) (Tree a) deriving (Eq, Ord, Show)"
-        (DataDeclaration [("Leaf", [TypeRefVar "a"]), ("Branch", [TypeRefApp (DataType "Tree") [TypeRefVar "a"], TypeRefApp (DataType "Tree") [TypeRefVar "a"]])] (DataType "Tree") [Name "a"] [Name "Eq", Name "Ord", Name "Show"])
+        (DataDeclaration [("Leaf", [PositionalArg (TypeRefVar "a")]), ("Branch", [PositionalArg (TypeRefApp (DataType "Tree") [TypeRefVar "a"]), PositionalArg (TypeRefApp (DataType "Tree") [TypeRefVar "a"])])] (DataType "Tree") [Name "a"] [Name "Eq", Name "Ord", Name "Show"])
 
     it "parseDefinition" $ do
       testParser parseDefinition "x = 2" ("x", ExprLiteral (LiteralInt 2))

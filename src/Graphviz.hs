@@ -75,13 +75,13 @@ labelFunctionAndExprs (Function annot name args body) = do
   pure $ Function annot name args labeledBody
 
 labelExpr :: Expr -> State LabelState (AnnotatedExpr Integer)
-labelExpr (ExprLiteral x) = do
+labelExpr (AnnExprLiteral _ x) = do
   n <- getNext
   pure $ AnnExprLiteral n x
-labelExpr (ExprConstructor tag arity) = do
+labelExpr (AnnExprConstructor _ tag arity) = do
   n <- getNext
   pure $ AnnExprConstructor n tag arity
-labelExpr (ExprVariable var) = do
+labelExpr (AnnExprVariable _ var) = do
   (_, env) <- get
   case Map.lookup var env of
     Nothing -> do
@@ -89,30 +89,30 @@ labelExpr (ExprVariable var) = do
       pure $ AnnExprVariable n var
     Just existing ->
       pure $ AnnExprVariable existing var
-labelExpr (ExprApplication left right) = do
+labelExpr (AnnExprApplication _ left right) = do
   n <- getNext
   labeledLeft <- labelExpr left
   labeledRight <- labelExpr right
   pure $ AnnExprApplication n labeledLeft labeledRight
-labelExpr (ExprLambda name expr) = do
+labelExpr (AnnExprLambda _ name expr) = do
   n <- getNext
   labeledExpr <- labelExpr expr
   pure $ AnnExprLambda n name labeledExpr
-labelExpr (ExprLet bindings body) = do
+labelExpr (AnnExprLet _ bindings body) = do
   labeledBindings <- forM bindings $ \(name, binding) -> do
     labeledBinding <- labelExpr binding
     pure (name, labeledBinding)
   n <- getNext
   labeledBody <- labelExpr body
   pure $ AnnExprLet n labeledBindings labeledBody
-labelExpr (ExprCase scrutinee alts) = do
+labelExpr (AnnExprCase _ scrutinee alts) = do
   n <- getNext
   labeledScrutinee <- labelExpr scrutinee
   labeledAlts <- forM alts $ \(Alternative pat expr) -> do
     labeledExpr <- labelExpr expr
     pure $ Alternative pat labeledExpr
   pure $ AnnExprCase n labeledScrutinee labeledAlts
-labelExpr _ = error "Avoiding `Pattern match(es) are non-exhaustive` due to PatternSynonyms"
+
 
 programToGraphviz :: Program Integer -> Text
 programToGraphviz Program{..} =
@@ -175,3 +175,4 @@ exprToGraphviz functionNames (AnnExprCase n expr alts) = fold
       [ exprToGraphviz functionNames alt
       , annotation alt `pointsTo` n
       ]
+
