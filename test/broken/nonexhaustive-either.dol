@@ -1,0 +1,9 @@
+-- BROKEN
+
+data Either a b = Left a | Right b
+
+f :: Either Int Int -> Int
+f x = case x of
+  Left n -> n
+
+main = f $ Left 42

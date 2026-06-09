@@ -194,9 +194,11 @@ foldl' _ acc Nil = acc
 foldl' f acc (Cons x xs) = seq acc $ foldl' f (f acc x) xs
 
 zip :: [a] -> [b] -> [(a, b)]
-zip [] _ = []
-zip _ [] = []
-zip (a:as) (b:bs) = (a, b) : zip as bs
+zip xs ys = case xs of
+  [] -> []
+  (a:as) -> case ys of
+    [] -> []
+    (b:bs) -> (a, b) : zip as bs
 
 splitAt :: Int -> [a] -> ([a], [a])
 splitAt n xs

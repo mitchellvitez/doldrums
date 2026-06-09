@@ -1,0 +1,10 @@
+-- BROKEN
+
+data Color = Red | Green | Blue
+
+f :: Color -> Bool
+f x = case x of
+  Red -> True
+  Green -> False
+
+main = f Red

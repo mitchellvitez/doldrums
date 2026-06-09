@@ -1,0 +1,7 @@
+-- BROKEN
+
+f :: List Int -> Int
+f x = case x of
+  Nil -> 0
+
+main = f Nil

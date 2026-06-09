@@ -13,7 +13,8 @@ where
 import Language
 import FixAst (singleExprForm)
 
-import Control.Monad (foldM, forM, forM_, when)
+import Data.List (find)
+import Control.Monad (foldM, forM, forM_, when, unless)
 import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -121,6 +122,7 @@ instance Exception TypeCheckingException
 data TypeInstantiationEnv = TypeInstantiationEnv
   { signatureMap :: Map Name Scheme
   , instanceMap :: Map Name [Type]
+  , envDataDeclarations :: [DataDeclaration]
   }
 
 data TypeInstantiationState = TypeInstantiationState
@@ -134,11 +136,11 @@ data TypeInstantiationState = TypeInstantiationState
 type TypeInstantiation a =
   ExceptT Text (ReaderT TypeInstantiationEnv (StateT TypeInstantiationState IO)) a
 
-runTypeInstantiation :: Map Name Scheme -> Map Name [Type] -> TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
-runTypeInstantiation signatures instances t = do
+runTypeInstantiation :: Map Name Scheme -> Map Name [Type] -> [DataDeclaration] -> TypeInstantiation a -> IO (Either Text a, TypeInstantiationState)
+runTypeInstantiation signatures instances dataDecls t = do
   runStateT (runReaderT (runExceptT t) env) initialTypeInstantiationState
   where
-    env = TypeInstantiationEnv { signatureMap = signatures, instanceMap = instances }
+    env = TypeInstantiationEnv { signatureMap = signatures, instanceMap = instances, envDataDeclarations = dataDecls }
     initialTypeInstantiationState = TypeInstantiationState
       { typeInstantiationSupply = 0
       , typeInstantiationSubstitution = Map.empty
@@ -254,7 +256,16 @@ typeCheckExpr oldEnv (AnnExprLet sourcePos bindings expr2) = do
           env2 = TypeEnv $ Map.insert name generalizedType env1
       (subs2, type2) <- typeCheckExpr (apply subs1' env2) expr2
       pure (subs2 `combineSubstitutions` subs1', type2)
-typeCheckExpr env (AnnExprCase sourcePos _ alts) = do
+typeCheckExpr env (AnnExprCase sourcePos scrutinee alts) = do
+  (subsScrutinee, scrutineeType) <- typeCheckExpr env scrutinee
+  let env1 = apply subsScrutinee env
+
+  dataDecls <- asks envDataDeclarations
+  subsExhaustive <- checkCaseExhaustiveness sourcePos dataDecls scrutineeType alts scrutinee
+
+  let env2 = apply subsExhaustive env1
+      combinedSubs1 = subsExhaustive `combineSubstitutions` subsScrutinee
+
   let toNestedLambdas :: CaseAlternative SourcePos -> (Int, AnnotatedExpr SourcePos)
       toNestedLambdas (Alternative pattern body) =
         ( length $ patternNames pattern
@@ -266,14 +277,54 @@ typeCheckExpr env (AnnExprCase sourcePos _ alts) = do
       removeArgsFromType _ _ = error "bad case pattern match"
   let altExprs = map toNestedLambdas alts
   altExprTypes@(firstAltExprType:_) :: [(Substitution, Type)] <- forM altExprs $ \(numArgs, altExpr) -> do
-    (s, t) <- typeCheckExpr env altExpr
+    (s, t) <- typeCheckExpr env2 altExpr
     pure (s, removeArgsFromType numArgs t)
-  foldM foldAction firstAltExprType altExprTypes
+  (subsAlts, resultType) <- foldM foldAction firstAltExprType altExprTypes
+  pure (subsAlts `combineSubstitutions` combinedSubs1, resultType)
   where
     foldAction :: (Substitution, Type) -> (Substitution, Type) -> TypeInstantiation (Substitution, Type)
     foldAction (_, t1) (_, t2) = do
       newSubs <- unify sourcePos t1 t2
       pure (newSubs, t1)
+
+checkCaseExhaustiveness :: SourcePos -> [DataDeclaration] -> Type -> [CaseAlternative a] -> AnnotatedExpr SourcePos -> TypeInstantiation Substitution
+checkCaseExhaustiveness _ _ _ alts _ | any isCatchAll alts = pure emptySubstitution
+  where
+    isCatchAll (Alternative PatternWildcard _) = True
+    isCatchAll (Alternative (PatternVar _) _) = True
+    isCatchAll _ = False
+checkCaseExhaustiveness pos dataDecls scrutineeType alts scrutinee = do
+  let usedCtors = [tag | Alternative (PatternConstructor tag _) _ <- alts]
+  if null usedCtors
+    then pure emptySubstitution
+    else do
+      let knownDataType = case scrutineeType of
+            TypeTagged dt -> find ((== dt) . dataType) dataDecls
+            _ -> Nothing
+          inferredDataType = case filter (\dd -> all (`elem` map fst (declarations dd)) usedCtors) dataDecls of
+            [dd] -> Just dd
+            _ -> Nothing
+          dataDecl = case knownDataType of
+            Just _ -> knownDataType
+            Nothing -> inferredDataType
+      case dataDecl of
+        Just dd -> do
+          subs <- case (scrutineeType, knownDataType) of
+            (TypeVariable _, Nothing) -> unify pos scrutineeType (TypeTagged (dataType dd))
+            _ -> pure emptySubstitution
+          let allCtors = map fst (declarations dd)
+              missingCtors = filter (`notElem` usedCtors) allCtors
+              isOtherwiseGuard = case scrutinee of
+                AnnExprVariable _ (Name "otherwise") -> True
+                _ -> False
+              isBoolTrueOnly = usedCtors == [Tag "True"] && missingCtors == [Tag "False"]
+          unless (null missingCtors || (isOtherwiseGuard && isBoolTrueOnly)) $
+            throw . TypeCheckingException pos $
+              "Non-exhaustive patterns: "
+              <> Text.intercalate ", " (map (\(Tag t) -> "'" <> t <> "'") missingCtors)
+              <> " not covered"
+          pure subs
+        Nothing -> pure emptySubstitution
 
 infer :: Map Name Scheme -> AnnotatedExpr SourcePos -> TypeInstantiation (Type, Substitution, [Constraint])
 infer env expr = do
@@ -351,7 +402,7 @@ typeHintToScheme hint =
 
 typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInference program programText = do
-  (runTypeInstantiation sigSchemes insts $ do
+  (runTypeInstantiation sigSchemes insts (dataDeclarations program) $ do
     (typ, subs, constraints) <- infer initialEnvironment $ singleExprForm program
     solveConstraints subs constraints
     pure typ)

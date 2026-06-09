@@ -1,0 +1,8 @@
+-- BROKEN
+
+data Opt a = Some a | None
+
+f x = case x of
+  Some a -> a
+
+main = f None

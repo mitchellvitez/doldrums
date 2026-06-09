@@ -1,0 +1,8 @@
+-- BROKEN
+
+f :: Ordering -> Bool
+f x = case x of
+  LT -> True
+  EQ -> False
+
+main = f GT
