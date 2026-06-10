@@ -6,4 +6,4 @@ myIf c t f =
     True -> t
     False -> f
 
-main = myIf (1 < 2) 3 4
+main = print $ myIf (1 < 2) 3 4

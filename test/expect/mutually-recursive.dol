@@ -2,4 +2,4 @@
 
 f n = if n < 0 then n else g (n - 1)
 g n = f (n - 1)
-main = f 3
+main = print $ f 3

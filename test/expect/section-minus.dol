@@ -1,2 +1,2 @@
 -- EXPECT 4
-main = show ((- 1) 5)
+main = print $ show ((- 1) 5)

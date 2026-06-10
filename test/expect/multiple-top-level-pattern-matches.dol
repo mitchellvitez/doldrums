@@ -4,4 +4,4 @@ f x = x
 
 f y = y
 
-main = f "hello"
+main = print $ f "hello"

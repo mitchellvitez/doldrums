@@ -8,4 +8,4 @@ instance Equal Bool where
   eq False False = True
   eq _     _     = False
 
-main = eq True False
+main = print $ eq True False

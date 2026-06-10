@@ -9,4 +9,4 @@ instance Unbox (Wrapper Int) where
   unbox w = case w of
     MkWrapper x -> x
 
-main = unbox (MkWrapper 7)
+main = print $ unbox (MkWrapper 7)

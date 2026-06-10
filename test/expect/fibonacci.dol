@@ -1,6 +1,6 @@
 -- EXPECT 34
 
-main = fib 8
+main = print $ fib 8
 
 fib n =
   if (n == 0) then 1 else

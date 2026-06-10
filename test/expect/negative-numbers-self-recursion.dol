@@ -4,4 +4,4 @@ g n
   | n < negate 5 = n
   | otherwise = g (n - 1)
 
-main = g 3
+main = print $ g 3

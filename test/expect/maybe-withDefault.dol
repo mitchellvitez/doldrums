@@ -5,4 +5,4 @@ withDefault maybe default =
     Nothing -> default
     Just x -> x
 
-main = withDefault Nothing 7 + withDefault (Just 2) 4
+main = print $ withDefault Nothing 7 + withDefault (Just 2) 4

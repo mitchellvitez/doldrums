@@ -13,4 +13,4 @@ hangingIndent = let
 
 oneLiner = let x = 1 in x
 
-main = indent + hangingIndent + oneLiner
+main = print $ indent + hangingIndent + oneLiner

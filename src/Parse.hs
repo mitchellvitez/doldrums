@@ -32,6 +32,11 @@ lexeme = L.lexeme spaceConsumer
 lexemeNewline :: Parser a -> Parser a
 lexemeNewline = L.lexeme spaceConsumerNewline
 
+data DoStmt
+  = DoBind Pattern Expr
+  | DoLet Name Expr
+  | DoExpr Expr
+
 data TopLevel a
   = Decl DataDeclaration
   | Func (Function a)
@@ -247,6 +252,7 @@ parseAnnotatedExpr = do
 
 parseExpr :: Parser Expr
 parseExpr =
+  try parseExprDo     <|>
   try parseExprLet    <|>
   try parseExprLambda <|>
   try parseExprCase   <|>
@@ -375,6 +381,50 @@ parseExprCase = do
   lexeme $ string "of"
   alternatives <- try $ manyIndented parseCaseAlternative
   pure $ ExprCase scrutinee alternatives
+
+desugarDo :: [DoStmt] -> Expr
+desugarDo [DoExpr e] = e
+desugarDo (DoExpr e : rest) =
+  ExprApplication (ExprApplication (ExprVariable (Name ">>=")) e)
+    (ExprLambda (Name "_") (desugarDo rest))
+desugarDo (DoBind pat e : rest) =
+  ExprApplication (ExprApplication (ExprVariable (Name ">>=")) e)
+    (doPatternToLambda pat (desugarDo rest))
+desugarDo (DoLet n e : rest) =
+  ExprLet [(n, e)] (desugarDo rest)
+desugarDo [] = error "empty do block"
+
+doPatternToLambda :: Pattern -> Expr -> Expr
+doPatternToLambda (PatternVar n) body = ExprLambda n body
+doPatternToLambda pat body =
+  ExprLambda (Name "pat") (ExprCase (ExprVariable (Name "pat")) [Alternative pat body])
+
+parseExprDo :: Parser Expr
+parseExprDo = do
+  lexeme . try $ string "do" <* notFollowedBy parseNameChar
+  stmts <- try (manyIndented parseDoStmt) <|> fmap pure parseDoStmt
+  pure $ desugarDo stmts
+
+parseDoStmt :: Parser DoStmt
+parseDoStmt =
+  try parseDoBind <|>
+  try parseDoLet  <|>
+  DoExpr <$> parseExpr
+
+parseDoBind :: Parser DoStmt
+parseDoBind = do
+  pat <- parsePattern
+  lexeme $ string "<-"
+  expr <- parseExpr
+  pure $ DoBind pat expr
+
+parseDoLet :: Parser DoStmt
+parseDoLet = do
+  lexeme $ string "let"
+  name <- parseName
+  lexeme $ char '='
+  expr <- parseExpr
+  pure $ DoLet name expr
 
 parseExprIf :: Parser Expr
 parseExprIf = do
@@ -788,7 +838,8 @@ typeHintLiteral name hint = do
 
 keywords :: Set Text
 keywords = Set.fromList
-  [ "let"
+  [ "do"
+  , "let"
   , "in"
   , "case"
   , "of"

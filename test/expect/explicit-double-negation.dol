@@ -1,2 +1,2 @@
 -- EXPECT 3
-main = negate (negate 3)
+main = print $ negate (negate 3)

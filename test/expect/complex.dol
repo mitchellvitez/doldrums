@@ -5,4 +5,4 @@ double n =
   let
     b = 2
   in n * b
-main = f (double 4)
+main = print $ f (double 4)

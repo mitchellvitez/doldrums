@@ -1,5 +1,4 @@
 -- EXPECT 2361183241434822606848
 
 -- big numeric literal, 2^70
-main :: Int
-main = 1180591620717411303424 * 2
+main = print $ 1180591620717411303424 * 2

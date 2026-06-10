@@ -10,4 +10,4 @@ instance Size (Seq Int) where
     Emp -> 0
     Snoc x rest -> 1 + size rest
 
-main = size (Snoc 1 (Snoc 2 (Snoc 3 Emp)))
+main = print $ size (Snoc 1 (Snoc 2 (Snoc 3 Emp)))

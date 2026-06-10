@@ -4,4 +4,4 @@ withDefault default = \case
   Nothing -> default
   Just x -> x
 
-main = withDefault 7 Nothing + withDefault 4 (Just 2)
+main = print $ withDefault 7 Nothing + withDefault 4 (Just 2)

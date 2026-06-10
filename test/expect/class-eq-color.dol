@@ -12,4 +12,4 @@ instance Equal Color where
       _ -> False
     _ -> False
 
-main = eq Red Red
+main = print $ eq Red Red

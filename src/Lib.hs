@@ -34,9 +34,8 @@ data DebugFlag = IncludeDebugInfo | NoDebugInfo
 data CompileFlag = Compiled | Interpreted
   deriving (Eq, Show)
 
--- strat = what to do with the `Text` return value of the Doldrums program
-execute :: Text -> (Text -> IO a) -> DebugFlag -> CompileFlag -> IO a
-execute programText strat debugFlag compileFlag = do
+execute :: Text -> DebugFlag -> CompileFlag -> IO Text
+execute programText debugFlag compileFlag = do
   preludeFile <- readFile "src/Prelude.dol"
 
   case parse parseProgram "" (pack preludeFile) of
@@ -99,5 +98,4 @@ execute programText strat debugFlag compileFlag = do
                     , (tag, _) <- declarations dtDecl
                     ]
                   methodEnv = methodEnvFromInstances (instanceDeclarations prog) typeMap
-                  result = interpret topLevelBindings methodEnv typeMap mainExpr
-              result `seq` strat result
+              interpret topLevelBindings methodEnv typeMap mainExpr

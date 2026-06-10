@@ -1,2 +1,2 @@
 -- EXPECT -1
-main = show ((-1))
+main = print $ show ((-1))

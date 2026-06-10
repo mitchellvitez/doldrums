@@ -6,4 +6,4 @@ class MyClass a where
 instance MyClass Int where
   myMethod x = x
 
-main = myMethod 42
+main = print $ myMethod 42

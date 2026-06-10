@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 import Lib (execute, DebugFlag(..), CompileFlag(..))
 import Parser (parserSpec)
@@ -11,6 +12,8 @@ import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import Data.Text (pack, unpack, stripPrefix)
+import qualified Data.Text as T
 import Test.Hspec
 import Control.Exception (try, SomeException)
 import System.Timeout (timeout)
@@ -43,7 +46,7 @@ main = hspec $ do
   describe "tour" $
     it "compiles tour.dol" $ do
       content <- TIO.readFile "tour.dol"
-      void $ execute content pure NoDebugInfo Interpreted
+      void $ execute content NoDebugInfo Interpreted
 
 data TestDirective
   = ExpectDirective Text
@@ -65,7 +68,7 @@ discoverDolFiles dir = do
   let dolFiles = filter ((== ".dol") . takeExtension) entries
   forM dolFiles $ \file -> do
     content <- TIO.readFile $ dir </> file
-    let name = T.pack $ dropExtension file
+    let name = pack $ dropExtension file
         (directive, program) = parseHeader content
     pure $ TestProgram name program directive
 
@@ -77,31 +80,31 @@ parseHeader text = fromMaybe (MissingDirective, text) $ do
   where
     parseDirective :: Text -> TestDirective
     parseDirective line = fromMaybe MissingDirective $
-          ExpectDirective <$> T.stripPrefix "-- EXPECT " line
-      <|> BrokenDirective <$  T.stripPrefix "-- BROKEN"  line
-      <|> IgnoreDirective <$  T.stripPrefix "-- IGNORE"  line
+          ExpectDirective <$> stripPrefix "-- EXPECT " line
+      <|> BrokenDirective <$  stripPrefix "-- BROKEN"  line
+      <|> IgnoreDirective <$  stripPrefix "-- IGNORE"  line
 
 mkDolTest :: TestProgram -> SpecWith ()
 mkDolTest (TestProgram name _ IgnoreDirective) =
-  xit (T.unpack name) pending
+  xit (unpack name) pending
 mkDolTest (TestProgram name content BrokenDirective) =
-  it (T.unpack name) $ do
-    result <- timeout 100_000 . try $ execute content pure NoDebugInfo Interpreted
+  it (unpack name) $ do
+    result <- timeout 100_000 . try $ execute content NoDebugInfo Interpreted
     case result of
       Nothing -> expectationFailure "Timed out after 100ms"
       Just (Right _) -> expectationFailure "Expected an exception but program succeeded"
       Just (Left (e :: SomeException)) -> do
-        TIO.putStrLn $ "  " <> T.pack (show e)
+        TIO.putStrLn $ "  " <> pack (show e)
 mkDolTest (TestProgram name content (ExpectDirective expected)) =
-  it (T.unpack name) $ do
-    result <- timeout 100_000 $ execute content pure NoDebugInfo Interpreted
+  it (unpack name) $ do
+    result <- timeout 100_000 $ execute content NoDebugInfo Interpreted
     case result of
       Nothing -> expectationFailure "Timed out after 100ms"
       Just output -> output `shouldBe` expected
 mkDolTest (TestProgram name _ MissingDirective) =
-  it (T.unpack name) $
+  it (unpack name) $
     expectationFailure $
-      "No test directive found in " <> T.unpack name <> ".dol\n" <>
+      "No test directive found in " <> unpack name <> ".dol\n" <>
       "Tests must start with one of:\n" <>
       "-- EXPECT <output>\n" <>
       "-- BROKEN\n" <>

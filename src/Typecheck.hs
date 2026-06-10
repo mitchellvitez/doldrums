@@ -7,7 +7,7 @@ module Typecheck
   , TypeCheckingException(..)
   , TypeInstantiationState(..)
   , HoleInfo(..)
-  , Type
+  , Type(..)
   , reportHoles
   )
 where
@@ -27,7 +27,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Text.Megaparsec (SourcePos, sourceLine, sourceColumn, unPos)
+import Text.Megaparsec (SourcePos(..), sourceLine, sourceColumn, unPos, mkPos)
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import System.Exit (exitFailure)
@@ -41,6 +41,7 @@ data Type
   | TypeString
   | TypeTagged DataType
   | Type :-> Type
+  | TypeIO Type
   | TypeVariable Name
   deriving (Eq, Show, Generic)
 
@@ -105,12 +106,14 @@ instance Types Type where
   freeTypeVariable TypeString = Set.empty
   freeTypeVariable TypeDouble = Set.empty
   freeTypeVariable (TypeTagged _) = Set.empty
+  freeTypeVariable (TypeIO a) = freeTypeVariable a
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
     Nothing -> TypeVariable name
     Just t -> t
   apply subs (a :-> b) = apply subs a :-> apply subs b
+  apply subs (TypeIO a) = TypeIO (apply subs a)
   apply _ t = t
 
 instance Types a => Types [a] where
@@ -178,6 +181,7 @@ unify sourcePos (a1 :-> b1) (a2 :-> b2) = do
   subs1 <- unify sourcePos a1 a2
   subs2 <- unify sourcePos (apply subs1 b1) (apply subs1 b2)
   pure $ subs1 `combineSubstitutions` subs2
+unify sourcePos (TypeIO a) (TypeIO b) = unify sourcePos a b
 unify sourcePos (TypeVariable u) t = varBind sourcePos u t
 unify sourcePos t (TypeVariable u) = varBind sourcePos u t
 unify _ TypeInt TypeInt = pure emptySubstitution
@@ -403,6 +407,7 @@ pprintType = \case
   TypeDouble -> "Double"
   TypeString -> "String"
   TypeTagged (DataType n) -> n
+  TypeIO a -> "IO " <> pprintType a
   TypeVariable (Name n) -> n
   a :-> b -> pprintType a <> " -> " <> pprintType b
 
@@ -459,16 +464,32 @@ typeInference program programText = do
   (runTypeInstantiation sigSchemes insts (dataDeclarations program) $ do
     (typ, subs, constraints) <- infer initialEnvironment $ singleExprForm program
     solveConstraints subs constraints
-    modify $ \s -> s { typeInstantiationSubstitution = subs }
-    pure typ)
+    let ioUnit = TypeIO (TypeTagged (DataType "Unit"))
+        appliedTyp = apply subs typ
+    subs' <- unify (SourcePos "" (mkPos 1) (mkPos 1)) appliedTyp ioUnit
+    let finalSubs = combineSubstitutions subs' subs
+    modify $ \s -> s { typeInstantiationSubstitution = finalSubs }
+    pure $ apply subs' appliedTyp)
     `catch` typecheckingFailureHandler programText
   where
     sigSchemes = Map.fromList . map (fmap typeHintToScheme) $ typeSignatures program
     insts = buildInstanceMap program
     initialEnvironment :: Map Name Scheme
     initialEnvironment =
+      ioPrimitives <>
       sigSchemes <>
       Map.fromList (initialFunctionTypes program 1)
+
+    ioPrimitives :: Map Name Scheme
+    ioPrimitives = Map.fromList
+      [ (Name ">>=", Scheme [Name "a", Name "b"] [] (TypeIO (TypeVariable (Name "a")) :-> ((TypeVariable (Name "a") :-> TypeIO (TypeVariable (Name "b"))) :-> TypeIO (TypeVariable (Name "b")))))
+      , (Name "pure", Scheme [Name "a"] [] (TypeVariable (Name "a") :-> TypeIO (TypeVariable (Name "a"))))
+      , (Name "print", Scheme [Name "a"] [] (TypeVariable (Name "a") :-> TypeIO (TypeTagged (DataType "Unit"))))
+      , (Name "putStrLn", Scheme [] [] (TypeString :-> TypeIO (TypeTagged (DataType "Unit"))))
+      , (Name "getLine", Scheme [] [] (TypeIO TypeString))
+      , (Name "readFile", Scheme [] [] (TypeString :-> TypeIO TypeString))
+      , (Name "writeFile", Scheme [] [] (TypeString :-> (TypeString :-> TypeIO (TypeTagged (DataType "Unit")))))
+      ]
 
     initialFunctionTypes :: Program SourcePos -> Int -> [(Name, Scheme)]
     initialFunctionTypes (Program [] [] _ _ _) _ = []

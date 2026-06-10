@@ -2,4 +2,4 @@
 
 f x y = x + y
 
-main = 1 `f` 2
+main = print $ 1 `f` 2

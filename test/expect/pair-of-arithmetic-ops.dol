@@ -17,5 +17,4 @@ second p =
 f :: Int -> Int -> Pair Int Int
 f x y = first $ Pair (id x) (second $ Pair 3 y)
 
-main =
-  f three $ id four
+main = print $ f three $ id four

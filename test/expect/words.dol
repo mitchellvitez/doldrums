@@ -1,3 +1,3 @@
 -- EXPECT Cons hello (Cons world Nil)
 
-main = words "hello world"
+main = print $ words "hello world"

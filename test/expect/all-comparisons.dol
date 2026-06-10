@@ -1,6 +1,5 @@
 -- EXPECT True
-main :: Bool
-main =
+main = print $
   1 == 1 &&
   1 /= 2 &&
   1 < 2  &&

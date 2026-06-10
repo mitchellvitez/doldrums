@@ -1,3 +1,3 @@
 -- EXPECT 3
 
-main = length [1, 2, 3]
+main = print $ length [1, 2, 3]

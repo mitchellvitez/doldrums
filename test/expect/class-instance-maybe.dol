@@ -8,4 +8,4 @@ class Wrap a where
 instance Wrap Int where
   wrap x = Some x
 
-main = wrap 7
+main = print $ wrap 7

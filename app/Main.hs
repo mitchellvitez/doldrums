@@ -3,9 +3,9 @@
 module Main where
 
 import Lib
+import Control.Monad (void)
 import System.Exit
-import Data.Text qualified as T
-import qualified Data.Text.IO as TIO
+import qualified Data.Text as T
 import Options.Applicative
 
 main :: IO ()
@@ -17,13 +17,18 @@ main = do
       case inputFilepaths of
         [file] -> do
           programText <- T.pack <$> readFile file
-          execute programText TIO.putStrLn debugFlag compileFlag
+          void $ execute programText debugFlag compileFlag
         _ -> showHelp exitFailure
 
 showHelp :: IO () -> IO ()
 showHelp exitStyle = do
   putStrLn $ unlines
-    [ ""
+    [ "     _       _     _                          "
+    , "  __| | ___ | | __| |_ __ _   _ _ __ ___  ___ "
+    , " / _` |/ _ \\| |/ _` | '__| | | | '_ ` _ \\/ __|"
+    , "| (_| | (_) | | (_| | |  | |_| | | | | | \\__ \\"
+    , " \\__,_|\\___/|_|\\__,_|_|   \\__,_|_| |_| |_|___/"
+    , ""
     , "Doldrums - a tiny Haskell-like language"
     , ""
     , "Usage:"
@@ -39,8 +44,9 @@ showHelp exitStyle = do
     , "  Turn off debug information"
     , "    --no-debug | -n"
     , ""
-    , "Not sure where to start? Try:"
+    , "Not sure where to start? Try one of these:"
     , "  cabal run doldrums -- tour.dol"
+    , "  cabal run doldrums-test"
     ]
   exitStyle
 

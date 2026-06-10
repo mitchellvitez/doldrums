@@ -9,4 +9,4 @@ instance HasVal Int where
 instance HasVal Bool where
   val x = 42
 
-main = val 1 + val True
+main = print $ val 1 + val True

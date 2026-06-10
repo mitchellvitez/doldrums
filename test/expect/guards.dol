@@ -4,4 +4,4 @@ factorial n
   | n <= 1 = 1
   | otherwise = n * factorial (n - 1)
 
-main = factorial 7
+main = print $ factorial 7

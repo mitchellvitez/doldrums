@@ -1,6 +1,6 @@
 -- EXPECT 5
 
-main = f + g
+main = print $ f + g
 
 g = length $ zip [1,2,3] [5..25]
 

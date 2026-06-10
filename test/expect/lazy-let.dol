@@ -1,11 +1,10 @@
 -- EXPECT 7
 
-main =
-  let
-    d = e
-    a = b
-    f = 7
-    c = d
-    e = f
-    b = c
-  in f
+d2 = e2
+a2 = b2
+f2 = 7
+c2 = d2
+e2 = f2
+b2 = c2
+
+main = print f2

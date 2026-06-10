@@ -15,4 +15,4 @@ instance Mul Int where
 double :: Add a => a -> a
 double x = add x x
 
-main = mul (double 3) 3
+main = print $ mul (double 3) 3

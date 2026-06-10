@@ -1,2 +1,2 @@
 -- EXPECT -6
-main = 14 - 20
+main = print $ 14 - 20

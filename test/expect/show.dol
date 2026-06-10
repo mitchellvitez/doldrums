@@ -1,5 +1,5 @@
 -- EXPECT x = 7
 
-main = "x = " <> show x
+main = print $ "x = " <> show x
 
 x = 7

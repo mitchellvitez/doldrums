@@ -3,4 +3,4 @@
 add1 x = x + 1
 times2 x = x * 2
 math x = add1 . times2 $ x
-main = math 5
+main = print $ math 5

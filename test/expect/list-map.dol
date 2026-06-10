@@ -1,5 +1,5 @@
 -- EXPECT Cons 2 (Cons 3 (Cons 4 Nil))
 
-main = map addOne [1, 2, 3]
+main = print $ map addOne [1, 2, 3]
 
 addOne x = x + 1

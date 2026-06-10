@@ -10,11 +10,12 @@ where
 import Language
 
 import Data.List (find)
+import Data.Maybe (fromMaybe)
 import Control.Exception
 import Control.Monad (forM, when)
 import Control.Monad.State
 import qualified Data.Text as T
-import Data.Text (Text)
+import Data.Text (Text, pack, unpack)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.IntMap (IntMap)
@@ -71,6 +72,7 @@ data EvalState = EvalState
   , env :: Env
   , methodEnv :: MethodEnv
   , typeMap :: DataTypeMap
+  , outputLines :: [Text]
   }
 
 -- | evaluated form of Expr
@@ -112,14 +114,15 @@ instance Show Value where
   show (ValMethodDispatch name _) = "<method name=" <> T.unpack (unName name) <> ">"
 
 -- | takes top-level bindings, method dispatch env, data type map, and the `main` Expr
-interpret :: [(Name, Expr)] -> MethodEnv -> DataTypeMap -> Expr -> Text
-interpret bindings methodEnv typeMap mainExpr =
-  fst $ flip runState initialState $ do
-    -- evaluate `main` Expr to a Value
-    val <- withEnv topLevelEnv $ whnf mainExpr
-    -- convert that Value to Text for display
-    unpackValue val
+interpret :: [(Name, Expr)] -> MethodEnv -> DataTypeMap -> Expr -> IO Text
+interpret bindings methodEnv typeMap mainExpr = do
+  (valText, finalState) <- runStateT action initialState
+  let output = fromMaybe "" $ T.stripSuffix "\n" $ T.unlines (reverse (outputLines finalState))
+  pure $ if T.null output then valText else output
  where
+  action = do
+    val <- withEnv topLevelEnv $ whnf mainExpr
+    unpackValue val
   -- allocate a ThunkId for every top-level binding before evaluating
   -- so all names are in scope for all bindings (mutual recursion)
   tids = map ThunkId [0 .. length bindings - 1]
@@ -135,10 +138,13 @@ interpret bindings methodEnv typeMap mainExpr =
       , env = Map.empty
       , methodEnv = methodEnv
       , typeMap = typeMap
+      , outputLines = []
       }
 
+type Eval a = StateT EvalState IO a
+
 -- | allocate a thunk capturing the current env
-newThunkInCurrentEnv :: Expr -> State EvalState ThunkId
+newThunkInCurrentEnv :: Expr -> Eval ThunkId
 newThunkInCurrentEnv expr = do
   s <- get
   let tid = nextId s
@@ -149,7 +155,7 @@ newThunkInCurrentEnv expr = do
   pure tid
 
 -- | allocate a thunk with an explicit env
-newThunkWithEnv :: Env -> Expr -> State EvalState ThunkId
+newThunkWithEnv :: Env -> Expr -> Eval ThunkId
 newThunkWithEnv e expr = do
   s <- get
   let tid = nextId s
@@ -159,7 +165,7 @@ newThunkWithEnv e expr = do
     }
   pure tid
 
-force :: ThunkId -> State EvalState Value
+force :: ThunkId -> Eval Value
 force tid = do
   curState <- get
   case IntMap.lookup (unThunkId tid) (heap curState) of
@@ -176,7 +182,7 @@ force tid = do
       pure val
 
 -- | run an action with a temporary env, restoring the original afterward
-withEnv :: Env -> State EvalState a -> State EvalState a
+withEnv :: Env -> Eval a -> Eval a
 withEnv newEnv action = do
   oldEnv <- gets env
   modify $ \s -> s { env = newEnv }
@@ -185,24 +191,28 @@ withEnv newEnv action = do
   pure result
 
 -- | evaluate an Expr to weak head normal form. this is as far as `force` goes
-whnf :: Expr -> State EvalState Value
+whnf :: Expr -> Eval Value
 whnf (ExprLiteral l) = pure $ ValLiteral l
 whnf (ExprConstructor tag arity) = pure $ ValConstructor tag arity
 whnf (ExprLambda name body) = do
   -- capture the current env in the closure
   currentEnv <- gets env
   pure $ ValClosure name body currentEnv
-whnf (ExprVariable name) = do
-  -- check if this is a typeclass method name first
-  mMethod <- gets (Map.lookup name . methodEnv)
-  case mMethod of
-    Just dispatchTable -> do
-      pure $ ValMethodDispatch name dispatchTable
-    Nothing -> do
-      currentEnv <- gets env
-      case Map.lookup name currentEnv of
-        Just tid -> force tid
-        Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> tshow name
+whnf (ExprVariable name)
+  | name == Name "getLine" = do
+      s <- liftIO getLine
+      return $ ValLiteral (LiteralString (pack s))
+  | otherwise = do
+      -- check if this is a typeclass method name first
+      mMethod <- gets (Map.lookup name . methodEnv)
+      case mMethod of
+        Just dispatchTable -> do
+          pure $ ValMethodDispatch name dispatchTable
+        Nothing -> do
+          currentEnv <- gets env
+          case Map.lookup name currentEnv of
+            Just tid -> force tid
+            Nothing  -> throw $ RuntimeException $ "Unbound variable: " <> tshow name
 whnf (ExprLet bindings body) = do
   s <- get
   let
@@ -236,6 +246,8 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
     "/=" -> eqNeqFallback "/=" a b
     -- compare: try primitive first, then method dispatch
     "compare" -> compareFallback a b
+    ">>=" -> bindOp a b
+    "writeFile" -> writeFileOp a b
     _    -> doMethodBinaryOp op a b
 
 -- unary operations
@@ -248,6 +260,10 @@ whnf (ExprApplication (ExprVariable (Name op)) arg)
   | op == "floor" = floorPrim arg
   | op == "ceiling" = ceilingPrim arg
   | op == "round" = roundPrim arg
+  | op == "print" = printOp arg
+  | op == "putStrLn" = putStrLnOp arg
+  | op == "readFile" = readFileOp arg
+  | op == "pure" = pureOp arg
   | otherwise    = do
       mMethod <- gets (Map.lookup (Name op) . methodEnv)
       case mMethod of
@@ -320,7 +336,7 @@ whnf (ExprCase scrutinee alts) = do
 whnf x = error $ "Failed pattern match exhaustiveness: " <> show x
 
 -- primitive equality for Int/Double/String, otherwise instance method
-eqNeqFallback :: Text -> Expr -> Expr -> State EvalState Value
+eqNeqFallback :: Text -> Expr -> Expr -> Eval Value
 eqNeqFallback op a b = do
   valA <- whnf a
   valB <- whnf b
@@ -335,7 +351,7 @@ eqNeqFallback op a b = do
     _ -> doMethodBinaryOp op a b
 
 -- primitive compare for Int/Double/String, otherwise instance method
-compareFallback :: Expr -> Expr -> State EvalState Value
+compareFallback :: Expr -> Expr -> Eval Value
 compareFallback a b = do
   valA <- whnf a
   valB <- whnf b
@@ -351,7 +367,7 @@ compareFallback a b = do
       pure $ ValConstructor (Tag $ tshow result) (Arity 0)
     _ -> doMethodBinaryOp "compare" a b
 
-doMethodBinaryOp :: Text -> Expr -> Expr -> State EvalState Value
+doMethodBinaryOp :: Text -> Expr -> Expr -> Eval Value
 doMethodBinaryOp op a b = do
   mMethod <- gets (Map.lookup (Name op) . methodEnv)
   case mMethod of
@@ -367,7 +383,7 @@ doMethodBinaryOp op a b = do
           applyValue afterA b
         Nothing -> throw $ RuntimeException $ "Unknown operation: " <> op
 
-methodUnaryOp :: Text -> Expr -> (Expr -> State EvalState Value) -> State EvalState Value
+methodUnaryOp :: Text -> Expr -> (Expr -> Eval Value) -> Eval Value
 methodUnaryOp op arg fallback = do
   mMethod <- gets (Map.lookup (Name op) . methodEnv)
   case mMethod of
@@ -381,7 +397,7 @@ methodUnaryOp op arg fallback = do
     Nothing -> fallback arg
 
 -- applies a Value to a single Expr argument (always single due to currying)
-applyValue :: Value -> Expr -> State EvalState Value
+applyValue :: Value -> Expr -> Eval Value
 applyValue (ValClosure name body closureEnv) arg = do
   -- allocate the arg thunk in the current env (where arg is evaluated)
   currentEnv <- gets env
@@ -416,7 +432,7 @@ unApply (ValConstructor tag arity) acc = Right (tag, arity, acc)
 unApply (ValApply val tid) acc = unApply val (tid:acc)
 unApply _ _ = Left "Not a constructor"
 
-numBinOp :: (Integer -> Integer -> Integer) -> (Double -> Double -> Double) -> Expr -> Expr -> State EvalState Value
+numBinOp :: (Integer -> Integer -> Integer) -> (Double -> Double -> Double) -> Expr -> Expr -> Eval Value
 numBinOp intOp doubleOp a b = do
   valA <- whnf a
   case valA of
@@ -432,7 +448,7 @@ numBinOp intOp doubleOp a b = do
         _ -> throw $ RuntimeException "Type error in numeric operation"
     _ -> throw $ RuntimeException "Type error in numeric operation"
 
-strBinOp :: Expr -> Expr -> State EvalState Value
+strBinOp :: Expr -> Expr -> Eval Value
 strBinOp a b = do
   valA <- whnf a
   valB <- whnf b
@@ -441,7 +457,7 @@ strBinOp a b = do
       pure . ValLiteral . LiteralString $ rawA <> rawB
     _ -> throw $ RuntimeException "Type error in string concatenation"
 
-showPrim :: Expr -> State EvalState Value
+showPrim :: Expr -> Eval Value
 showPrim a = do
   val <- whnf a
   str <- unpackValue val
@@ -456,7 +472,7 @@ buildStringListExpr = foldr (\s acc ->
     acc
   ) (ExprConstructor (Tag "Nil") (Arity 0))
 
-extractStringList :: Value -> State EvalState [Text]
+extractStringList :: Value -> Eval [Text]
 extractStringList v = case unApply v [] of
   Right (Tag "Nil", _, []) -> pure []
   Right (Tag "Cons", _, [h, t]) -> do
@@ -469,54 +485,107 @@ extractStringList v = case unApply v [] of
     pure (headStr : tailStrs)
   _ -> throw $ RuntimeException "Expected a list of strings"
 
-wordsPrim :: Expr -> State EvalState Value
+wordsPrim :: Expr -> Eval Value
 wordsPrim a = do
   val <- whnf a
   case val of
     ValLiteral (LiteralString s) -> whnf $ buildStringListExpr (T.words s)
     _ -> throw $ RuntimeException "words expects a String"
 
-linesPrim :: Expr -> State EvalState Value
+linesPrim :: Expr -> Eval Value
 linesPrim a = do
   val <- whnf a
   case val of
     ValLiteral (LiteralString s) -> whnf $ buildStringListExpr (T.lines s)
     _ -> throw $ RuntimeException "lines expects a String"
 
-unwordsPrim :: Expr -> State EvalState Value
+unwordsPrim :: Expr -> Eval Value
 unwordsPrim a = do
   val <- whnf a
   strs <- extractStringList val
   pure . ValLiteral . LiteralString $ T.unwords strs
 
-unlinesPrim :: Expr -> State EvalState Value
+unlinesPrim :: Expr -> Eval Value
 unlinesPrim a = do
   val <- whnf a
   strs <- extractStringList val
   pure . ValLiteral . LiteralString $ T.unlines strs
 
-floorPrim :: Expr -> State EvalState Value
+floorPrim :: Expr -> Eval Value
 floorPrim a = do
   val <- whnf a
   case val of
     ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ floor d
     _ -> throw $ RuntimeException "floor expects a Double"
 
-ceilingPrim :: Expr -> State EvalState Value
+ceilingPrim :: Expr -> Eval Value
 ceilingPrim a = do
   val <- whnf a
   case val of
     ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ ceiling d
     _ -> throw $ RuntimeException "ceiling expects a Double"
 
-roundPrim :: Expr -> State EvalState Value
+roundPrim :: Expr -> Eval Value
 roundPrim a = do
   val <- whnf a
   case val of
     ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ round d
     _ -> throw $ RuntimeException "round expects a Double"
 
-unpackValue :: Value -> State EvalState Text
+bindOp :: Expr -> Expr -> Eval Value
+bindOp m f = do
+  valM <- whnf m
+  valF <- whnf f
+  currentEnv <- gets env
+  let tempName = Name "__bind_result__"
+  s <- get
+  let tid = nextId s
+      newHeap = IntMap.insert (unThunkId tid) (Done valM) (heap s)
+      newEnv = Map.insert tempName tid currentEnv
+  put s { heap = newHeap, nextId = ThunkId (unThunkId tid + 1) }
+  withEnv newEnv $ applyValue valF (ExprVariable tempName)
+
+writeFileOp :: Expr -> Expr -> Eval Value
+writeFileOp path contents = do
+  valPath <- whnf path
+  valContents <- whnf contents
+  case (valPath, valContents) of
+    (ValLiteral (LiteralString p), ValLiteral (LiteralString c)) -> do
+      liftIO $ writeFile (unpack p) (unpack c)
+      return $ ValConstructor (Tag "Unit") (Arity 0)
+    _ -> throw $ RuntimeException "writeFile requires two strings"
+
+printOp :: Expr -> Eval Value
+printOp arg = do
+  val <- whnf arg
+  str <- unpackValue val
+  modify $ \s -> s { outputLines = str : outputLines s }
+  liftIO $ putStrLn (unpack str)
+  pure $ ValConstructor (Tag "Unit") (Arity 0)
+
+putStrLnOp :: Expr -> Eval Value
+putStrLnOp arg = do
+  val <- whnf arg
+  case val of
+    ValLiteral (LiteralString str) -> do
+      modify $ \st -> st { outputLines = str : outputLines st }
+      liftIO $ putStrLn (unpack str)
+      return $ ValConstructor (Tag "Unit") (Arity 0)
+    _ -> throw $ RuntimeException "putStrLn requires a String"
+
+readFileOp :: Expr -> Eval Value
+readFileOp arg = do
+  val <- whnf arg
+  case val of
+    ValLiteral (LiteralString path) -> do
+      contents <- liftIO $ readFile (unpack path)
+      return $ ValLiteral (LiteralString (pack contents))
+    _ -> throw $ RuntimeException "readFile requires a String"
+
+pureOp :: Expr -> Eval Value
+pureOp arg = whnf arg
+
+unpackValue :: Value -> Eval Text
 unpackValue (ValLiteral (LiteralInt n)) = pure $ tshow n
 unpackValue (ValLiteral (LiteralString s)) = pure s
 unpackValue (ValLiteral (LiteralDouble f)) = pure $ tshow f

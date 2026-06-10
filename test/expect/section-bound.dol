@@ -1,4 +1,4 @@
 -- EXPECT 12
 double = (2*)
 inc = (+1)
-main = show (double (inc 5))
+main = print $ show (double (inc 5))

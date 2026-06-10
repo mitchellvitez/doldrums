@@ -13,4 +13,4 @@ instance Equal a => Equal (Pair a) where
     MkPair x y -> case p2 of
       MkPair u v -> eq x u && eq y v
 
-main = eq (MkPair 1 2) (MkPair 1 2)
+main = print $ eq (MkPair 1 2) (MkPair 1 2)

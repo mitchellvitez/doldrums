@@ -1,3 +1,3 @@
 -- EXPECT Cons ha (Cons ha (Cons ha Nil))
 
-main = replicate 3 "ha"
+main = print $ replicate 3 "ha"

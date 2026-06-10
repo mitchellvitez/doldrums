@@ -15,4 +15,4 @@ instance Mul Int where
 calc :: (Add a, Mul a) => a -> a
 calc x = add (mul x x) x
 
-main = calc 3
+main = print $ calc 3

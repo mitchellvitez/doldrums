@@ -2,4 +2,4 @@
 
 data Foo = Foo { bar :: Int, baz :: String }
 
-main = bar (Foo 42 "hello")
+main = print $ bar (Foo 42 "hello")

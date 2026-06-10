@@ -6,4 +6,4 @@ f x
   where
     g n = n * 2
 
-main = f 3
+main = print $ f 3

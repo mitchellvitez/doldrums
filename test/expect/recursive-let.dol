@@ -11,4 +11,4 @@ f x y =
     a = pair x b
     b = pair y a
   in fst $ snd $ snd $ snd a
-main = f three four
+main = print $ f three four

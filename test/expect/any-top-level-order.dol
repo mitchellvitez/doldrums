@@ -1,6 +1,6 @@
 -- EXPECT 7
 
-main = b
+main = print $ b
 b = c
 a = 7
 c = a

@@ -8,4 +8,4 @@ instance Multi Int where
   methodA x = x + 1
   methodB x = x + 2
 
-main = methodA 3 + methodB 3
+main = print $ methodA 3 + methodB 3

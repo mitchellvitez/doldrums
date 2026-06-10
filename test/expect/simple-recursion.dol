@@ -1,5 +1,5 @@
 -- EXPECT 1
 
-main = f 1
+main = print $ f 1
 
 f x = if x == 0 then 1 else f (x - 1)

@@ -1,4 +1,3 @@
 -- EXPECT hello world
 
-main :: String
-main = "hello" <> " " <> "world"
+main = print $ "hello" <> " " <> "world"
