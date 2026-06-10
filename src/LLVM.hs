@@ -37,6 +37,7 @@ header = T.unlines
   , ""
   ]
 
+-- | Generates LLVM code from STG, then runs the program with help from a runtime code file, and returns its output as @Text@
 compileAndRun :: StgExpr -> FilePath -> IO Text
 compileAndRun stg runtimePath = do
   let llvmIR = compileModule stg

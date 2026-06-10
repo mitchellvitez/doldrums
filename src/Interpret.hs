@@ -32,7 +32,13 @@ type MethodEnv = Map Name (Map Name Expr)
 -- | map from constructor tags to their data type names
 type DataTypeMap = Map Tag Name
 
--- | build a MethodEnv from instance declarations
+-- | Tracks which typeclass methods should be dispatched, given a full list of instances and the types those methods are attached to
+--
+-- 'MethodEnv' is a two-step map:
+--
+-- @method name  ->  type tag  ->  instance body@
+--
+-- For example, when we call the @==@ method on the @Int@ type, we should get the primitive instance body for equality on @Int@s
 methodEnvFromInstances :: [InstanceDeclaration ()] -> DataTypeMap -> MethodEnv
 methodEnvFromInstances instances typeMap =
   Map.fromListWith Map.union
@@ -113,7 +119,14 @@ instance Show Value where
   show (ValApply _ t) = "<thunk id=" <> show t <> ">"
   show (ValMethodDispatch name _) = "<method name=" <> T.unpack (unName name) <> ">"
 
--- | takes top-level bindings, method dispatch env, data type map, and the `main` Expr
+{- | Evaluates a 'Program', producing a @Text@ result representing the 'Program'\'s runtime @IO@ output
+
+Uses 'Thunk's to do non-strict evaluation of expressions
+
+Takes top-level bindings, method dispatch environment, datatype map, and the @main@ 'Expr'
+
+Keeps track of a 'heap' of allocations in 'EvalState'
+-}
 interpret :: [(Name, Expr)] -> MethodEnv -> DataTypeMap -> Expr -> IO Text
 interpret bindings methodEnv typeMap mainExpr = do
   (valText, finalState) <- runStateT action initialState

@@ -18,6 +18,20 @@ import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 
+{- | This is the initial step when preparing a 'Program'\'s syntax tree
+
+1. Pull out all record accessors from data declarations into top-level functions
+
+2. Generate code from @deriving@ clauses
+
+3. Combine top-level definitions (with multiple pattern matches) by name
+
+4. Ensure all function and data constructor 'Name's are unique
+
+5. Desugar
+
+6. Filter out code that is not reachable from @main@
+-}
 fixAst :: Program a -> Program a
 fixAst =
   filterReachable .
@@ -117,7 +131,17 @@ buildClauses _ _ _ = error "unhandled build clauses"
 data PatternGroupKey = CatchAllKey | LiteralKey Text | ConstructorKey Tag
   deriving (Eq, Ord)
 
--- convert Program to a single Expr (`let topLevelFunction = ... in main`)
+{- | Convert a 'Program' to a single 'Expr'
+
+The single-expression form is created by letting all other top-level functions exist as definitions in the body of @main@:
+
+@
+let topLevelFunction1 = x1
+    topLevelFunction2 = x2
+    ...
+in main
+@
+-}
 singleExprForm :: Program a -> AnnotatedExpr a
 singleExprForm program =
   case partition (\f -> name f == Name "main") (functions program) of

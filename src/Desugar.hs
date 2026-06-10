@@ -145,6 +145,61 @@ exprFalse ann = AnnExprConstructor ann (Tag "False") (Arity 0)
 exprTrue :: a -> AnnotatedExpr a
 exprTrue ann = AnnExprConstructor ann (Tag "True") (Arity 0)
 
+{- | Removes syntactic sugar by reducing to simpler 'Expr' forms
+
+This simplification is done via direct AST manipulation
+
+Each of the examples below contains a sugared expression (in Doldrums syntax) followed by a desugared version
+
+__if-then-else__
+
+@if cond then t else e@
+
+@case cond of
+  True -> t
+  False -> e
+@
+
+__Cons operator__
+
+@x : xs@
+
+@Cons x xs@
+
+__boolean operators like @&&@__
+
+@a && b@
+
+@case a of
+  True -> b
+  False -> False
+@
+
+__comparison operators like @<=@__
+
+@a <= b@
+
+@case compare a b of
+  LT -> True
+  EQ -> True
+  GT -> False
+@
+
+__OverloadedRecordDot-style record accessors__
+
+@expr.accessorFunc@
+
+@accessorFunc expr@
+
+__record updates__
+
+@Foo { bar = x }@
+
+@case foo of
+  Foo _bar baz -> Foo x baz
+@
+
+-}
 desugarProgram :: Program a -> Program a
 desugarProgram Program{..} =
   Program (map (desugarFunction dataDeclarations) functions)

@@ -21,9 +21,16 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 
--- runs two passes:
---   1. label each node in the expr with unique integer
---   2. use the labeled expr tree to generate graphviz
+{- | Generate graphviz-format text representing the AST of a 'Program'
+
+Each node points to its parents in the AST
+
+The generation algorithm runs two passes:
+
+  1. Label each node in the 'Expr' with a unique integer
+
+  2. Use the labeled 'Expr' tree to generate graphviz
+-}
 toGraphviz :: Program () -> Text
 toGraphviz program = fold
   [ "digraph {\n  rankdir=BT\n  ordering=in\n"

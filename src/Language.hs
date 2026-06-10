@@ -20,16 +20,16 @@ import Data.Text (Text, unpack)
 import Text.Megaparsec (SourcePos)
 
 data Program a = Program
-  -- f x = x + 1
+  -- | f x = x + 1
   { functions :: [Function a]
-  -- data Maybe a = Nothing | Just a
+  -- | data Maybe a = Nothing | Just a
   , dataDeclarations :: [DataDeclaration]
-  -- x :: Int -> a -> Bool
+  -- | x :: Int -> a -> Bool
   , typeSignatures :: [(Name, TypeHint)]
-  -- class Show a where
+  -- | class Show a where
   --   show :: a -> String
   , typeclassDeclarations :: [TypeclassDeclaration]
-  -- instance Show a => Show (Maybe a) where
+  -- | instance Show a => Show (Maybe a) where
   --   show Nothing = "Nothing" ...
   , instanceDeclarations :: [InstanceDeclaration a]
   }

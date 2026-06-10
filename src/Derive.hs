@@ -10,6 +10,24 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Map as Map
 
+{- | Generate @instance@ code from @deriving@ clauses attached to data declarations
+
+This generated code is written directly as AST nodes
+
+The currently supported instance derivations are @Eq@, @Ord@, and @Show@
+
+For example, @deriving Eq@ after a @MyType@ data declaration generates code like:
+
+@
+instance Eq MyType where
+  (==) = \\x -> \\y -> case x of
+    MyTypeConstructor1 -> case y of
+      MyTypeConstructor1 -> True
+      _ -> False
+    ...
+  (/=) = ...
+@
+-}
 deriveInstances :: DataDeclaration -> [InstanceDeclaration ()]
 deriveInstances dd = concatMap (\n -> deriveInstance dd n) (derivingClauses dd)
 
