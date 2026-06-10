@@ -194,7 +194,7 @@ So will this one, since you can't apply literals:
 main = 1 2 3
 ```
 
-### Operator Fixities
+## Operator Fixities
 
 Higher numbers mean higher precedence.
 

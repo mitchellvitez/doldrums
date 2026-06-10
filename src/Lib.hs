@@ -14,10 +14,11 @@ import Interpret (interpret, methodEnvFromInstances)
 import STG (compileStg)
 import Data.Text (Text, pack, unpack)
 import qualified Data.Text as Text
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import qualified Data.Map as Map
 import Text.Megaparsec (parse, errorBundlePretty)
 import System.Directory ()
+import System.Exit (exitFailure)
 
 putTextLn :: Text -> IO ()
 putTextLn = putStrLn . unpack
@@ -58,6 +59,11 @@ execute programText strat debugFlag compileFlag = do
             putTextLn $ "main : " <> toText types
             putStrLn $ show (typeInstantiationSupply state) <> " type variables used"
             putStrLn $ "Final substitution list: " <> show (Map.toList $ typeInstantiationSubstitution state)
+
+          let holes = typedHoles state
+          unless (null holes) $ do
+            reportHoles programText (typeInstantiationSubstitution state) holes
+            exitFailure
 
           let stgExpr = compileStg program
           debug debugFlag "STG" $ do

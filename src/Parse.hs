@@ -510,6 +510,7 @@ parseRecordUpdateExpr expr = do
 
 parseAtomicExpr :: Parser Expr
 parseAtomicExpr =
+  parseHoleExpr <|>
   parseExprVariable <|>
   parseExprLiteral <|>
   try parseRecordConstruction <|>
@@ -557,6 +558,12 @@ parseRecordUpdate = do
   let con = ExprConstructor (Tag "__upd__") (Arity 0)
       encodedArgs = concat [[ExprLiteral (LiteralString (unName n)), e] | (n, e) <- fields]
   pure $ \expr -> foldl ExprApplication (ExprApplication con expr) encodedArgs
+
+parseHoleExpr :: Parser Expr
+parseHoleExpr = lexeme $ do
+  void $ char '_'
+  rest <- many parseNameChar
+  pure . ExprVariable . Name $ "_" <> T.pack rest
 
 parseExprVariable :: Parser Expr
 parseExprVariable = ExprVariable <$> parseName

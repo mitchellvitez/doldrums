@@ -6,7 +6,9 @@ module Typecheck
   ( typeInference
   , TypeCheckingException(..)
   , TypeInstantiationState(..)
+  , HoleInfo(..)
   , Type
+  , reportHoles
   )
 where
 
@@ -125,10 +127,18 @@ data TypeInstantiationEnv = TypeInstantiationEnv
   , envDataDeclarations :: [DataDeclaration]
   }
 
+data HoleInfo = HoleInfo
+  { holeName :: Name
+  , holePos :: SourcePos
+  , holeTypeVar :: Name
+  }
+  deriving Show
+
 data TypeInstantiationState = TypeInstantiationState
   { typeInstantiationSupply :: Int
   , typeInstantiationSubstitution :: Substitution
   , typeConstraints :: [Constraint]
+  , typedHoles :: [HoleInfo]
   }
   deriving Show
 
@@ -145,6 +155,7 @@ runTypeInstantiation signatures instances dataDecls t = do
       { typeInstantiationSupply = 0
       , typeInstantiationSubstitution = Map.empty
       , typeConstraints = []
+      , typedHoles = []
       }
 
 addConstraints :: [Constraint] -> TypeInstantiation ()
@@ -213,6 +224,15 @@ typeCheckExpr (TypeEnv envMap) (AnnExprConstructor _ tag _) =
       pure (emptySubstitution, instantiatedType)
     Nothing -> do
       ty <- newTypeVar "a"
+      pure (emptySubstitution, ty)
+typeCheckExpr _ (AnnExprVariable sourcePos name)
+  | "_" `Text.isPrefixOf` unName name = do
+      ty <- newTypeVar "a"
+      let
+        tyVar = case ty of
+          TypeVariable n -> n
+          _ -> error "newTypeVar should return TypeVariable"
+      modify $ \s -> s { typedHoles = HoleInfo name sourcePos tyVar : typedHoles s }
       pure (emptySubstitution, ty)
 typeCheckExpr (TypeEnv env) (AnnExprVariable _ name) =
   case Map.lookup name env of
@@ -352,6 +372,40 @@ solveConstraints subs constraints = do
         then pure ()
         else throwError $ "No instance for " <> tshow name <> " " <> tshow typ
 
+resolveHoles :: Substitution -> [HoleInfo] -> [(Name, SourcePos, Type)]
+resolveHoles subs = map (\(HoleInfo n p tv) -> (n, p, apply subs (TypeVariable tv)))
+
+reportHoles :: Text -> Substitution -> [HoleInfo] -> IO ()
+reportHoles programText subs holes = do
+  let resolved = resolveHoles subs holes
+  forM_ resolved $ \(name, sourcePos, ty) -> do
+    putStrLn $ fold
+      [ "Found typed hole `"
+      , Text.unpack $ unName name
+      , " :: "
+      , Text.unpack $ pprintType ty
+      , "` in the expression below starting at "
+      , show . unPos $ sourceLine sourcePos
+      , ":"
+      , show . unPos $ sourceColumn sourcePos
+      ]
+    let line = replicate (unPos (sourceColumn sourcePos) - 1) '-'
+    putStrLn $ line <> "v"
+    let textLines = Text.lines programText
+        lineNum = unPos (sourceLine sourcePos) - 1
+    when (lineNum >= 0 && lineNum < length textLines) $
+      putTextLn $ textLines !! lineNum
+    putStrLn $ line <> "^"
+
+pprintType :: Type -> Text
+pprintType = \case
+  TypeInt -> "Int"
+  TypeDouble -> "Double"
+  TypeString -> "String"
+  TypeTagged (DataType n) -> n
+  TypeVariable (Name n) -> n
+  a :-> b -> pprintType a <> " -> " <> pprintType b
+
 typecheckingFailureHandler :: Text -> TypeCheckingException -> IO (Either Text Type, TypeInstantiationState)
 typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = do
   putStrLn $ fold
@@ -405,6 +459,7 @@ typeInference program programText = do
   (runTypeInstantiation sigSchemes insts (dataDeclarations program) $ do
     (typ, subs, constraints) <- infer initialEnvironment $ singleExprForm program
     solveConstraints subs constraints
+    modify $ \s -> s { typeInstantiationSubstitution = subs }
     pure typ)
     `catch` typecheckingFailureHandler programText
   where

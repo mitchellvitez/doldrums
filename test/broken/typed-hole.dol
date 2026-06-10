@@ -1,0 +1,4 @@
+-- BROKEN
+
+main =
+  _ + 1
