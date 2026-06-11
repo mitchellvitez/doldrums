@@ -112,13 +112,8 @@ eqCaseOnY tg _ constructors y =
 eqAndArgs :: Tag -> Int -> AnnotatedExpr ()
 eqAndArgs _tag 0 = boolTrue
 eqAndArgs tag n =
-  let pairs = zipWith (\xa ya -> (xa, ya)) (map (xArg tag) [0..n-1]) (map (yArg tag) [0..n-1])
-  in case pairs of
-       [] -> boolTrue
-       ((xa, ya):rest) ->
-         let firstEq = exprApp (exprApp (exprVar (Name "==")) (exprVar xa)) (exprVar ya)
-             restEqs = [exprApp (exprApp (exprVar (Name "==")) (exprVar xb)) (exprVar yb) | (xb, yb) <- rest]
-         in foldl exprAnd firstEq restEqs
+  let eqPair (xa, ya) = exprApp (exprApp (exprVar (Name "==")) (exprVar xa)) (exprVar ya)
+  in foldl1 exprAnd $ map eqPair $ zip (map (xArg tag) [0..n-1]) (map (yArg tag) [0..n-1])
 
 -- === Ord ===
 

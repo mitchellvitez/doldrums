@@ -117,7 +117,7 @@ instance Types Type where
   apply _ t = t
 
 instance Types a => Types [a] where
-  freeTypeVariable list = foldr Set.union Set.empty $ map freeTypeVariable list
+  freeTypeVariable list = foldMap freeTypeVariable list
   apply subs = map $ apply subs
 
 data TypeCheckingException = TypeCheckingException SourcePos Text

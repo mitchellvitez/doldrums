@@ -257,6 +257,18 @@ collectArgs (AnnExprApplication _ f x) =
   in (hd, args ++ [x])
 collectArgs e = (e, [])
 
+lookupTag :: [DataDeclaration] -> Tag -> Arity
+lookupTag [] tag = error $ "Could not find constructor: " <> show tag
+lookupTag (DataDeclaration [] _dataType _typeParams _deriv : rest) tag = lookupTag rest tag
+lookupTag (DataDeclaration ((x, args):xs) dataType typeParams deriv : rest) tag
+  | tag == x = Arity $ length args
+  | otherwise = lookupTag (DataDeclaration xs dataType typeParams deriv : rest) tag
+
+patternToLambda :: a -> Pattern -> AnnotatedExpr a -> AnnotatedExpr a
+patternToLambda annot (PatternVar n) body = AnnExprLambda annot n body
+patternToLambda annot pat body =
+  AnnExprLambda annot (Name "pat") (AnnExprCase annot (AnnExprVariable annot (Name "pat")) [Alternative pat body])
+
 pattern ExprLiteral :: Literal -> Expr
 pattern ExprLiteral n <- AnnExprLiteral _ n
   where ExprLiteral n = AnnExprLiteral () n

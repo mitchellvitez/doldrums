@@ -212,8 +212,8 @@ desugarFunction :: [DataDeclaration] -> Function a -> Function a
 desugarFunction dds f = f { args = map (desugarPattern dds) (args f), body = desugarExpr dds $ body f }
 
 desugarInstance :: [DataDeclaration] -> InstanceDeclaration a -> InstanceDeclaration a
-desugarInstance dds (InstanceDeclaration ctx cls ty meths) =
-  InstanceDeclaration ctx cls ty [(n, desugarExpr dds m) | (n, m) <- meths]
+desugarInstance dds inst@InstanceDeclaration{..} =
+  inst { instanceMethods = [(n, desugarExpr dds m) | (n, m) <- instanceMethods] }
 
 desugarExpr :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
 desugarExpr dds expr =
@@ -265,9 +265,4 @@ desugarPattern dds = \case
   PatternConstructor tag pats -> PatternConstructor tag (map (desugarPattern dds) pats)
   other -> other
 
-lookupTag :: [DataDeclaration] -> Tag -> Arity
-lookupTag [] tag = error $ "Could not find constructor: " <> show tag
-lookupTag (DataDeclaration [] _dataType _typeParams _deriv : rest) tag = lookupTag rest tag
-lookupTag (DataDeclaration ((x, args):xs) dataType typeParams deriv : rest) tag
-  | tag == x = Arity $ length args
-  | otherwise = lookupTag (DataDeclaration xs dataType typeParams deriv : rest) tag
+

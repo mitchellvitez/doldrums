@@ -87,11 +87,11 @@ groupByName = Map.elems . Map.fromListWith (flip (<>)) . map (\f -> (name f, [f]
 
 combineGroup :: [Function a] -> [Function a]
 combineGroup [f] = [f]
-combineGroup fs@(Function annot name pats _ : _) =
-  let arity = length pats
+combineGroup fs@(Function{..} : _) =
+  let arity = length args
       varNames = [Name $ "x" <> T.pack (show i) | i <- [1..arity]]
       varPats = map PatternVar varNames
-      clauses = [(args, body) | Function _ _ args body <- fs]
+      clauses = [(patArgs, patBody) | Function _ _ patArgs patBody <- fs]
   in [Function annot name varPats (buildClauses annot varNames clauses)]
 combineGroup _ = error "invalid input to combineGroup"
 
@@ -150,16 +150,11 @@ singleExprForm program =
     _ -> error "two or more `main` functions exist"
 
 toSingle :: AnnotatedExpr a -> Function a -> AnnotatedExpr a
-toSingle expr func = AnnExprLet (annotation expr) [(name func, toNestedLambdas func)] expr
+toSingle expr func@Function{..} = AnnExprLet (annotation expr) [(name, toNestedLambdas func)] expr
 
 toNestedLambdas :: Function a -> AnnotatedExpr a
-toNestedLambdas (Function annot _ args body) =
+toNestedLambdas Function{..} =
   foldr (patternToLambda annot) body args
-
-patternToLambda :: a -> Pattern -> AnnotatedExpr a -> AnnotatedExpr a
-patternToLambda annot (PatternVar n) body = AnnExprLambda annot n body
-patternToLambda annot pat body =
-  AnnExprLambda annot (Name "pat") (AnnExprCase annot (AnnExprVariable annot (Name "pat")) [Alternative pat body])
 
 -- FIX ARITIES --
 
@@ -170,12 +165,12 @@ fixArities program@Program{..} = program
   }
 
 fixInstanceArities :: [DataDeclaration] -> InstanceDeclaration a -> InstanceDeclaration a
-fixInstanceArities datas (InstanceDeclaration ctx cls ty meths) =
-  InstanceDeclaration ctx cls ty [(n, fixExprArities datas m) | (n, m) <- meths]
+fixInstanceArities datas inst@InstanceDeclaration{..} =
+  inst { instanceMethods = [(n, fixExprArities datas m) | (n, m) <- instanceMethods] }
 
 fixFunctionArities :: [DataDeclaration] -> Function a -> Function a
-fixFunctionArities datas f@(Function _ _ _ body) =
-  f { body = fixExprArities datas body }
+fixFunctionArities datas func@Function{..} =
+  func { body = fixExprArities datas body }
 
 fixExprArities :: [DataDeclaration] -> AnnotatedExpr a -> AnnotatedExpr a
 fixExprArities _ e@(AnnExprVariable _ _) = e
@@ -189,28 +184,20 @@ fixExprArities datas (AnnExprCase a expr alters) = AnnExprCase a (fixExprArities
   where fixAlt (Alternative pat body) = Alternative pat $ fixExprArities datas body
 
 
-lookupTag :: [DataDeclaration] -> Tag -> Arity
-lookupTag [] tag = error $ "Could not find constructor: " <> show tag
-lookupTag (DataDeclaration [] _dataType _typeParams _deriv : rest) tag = lookupTag rest tag
-lookupTag (DataDeclaration ((x, args):xs) dataType typeParams deriv : rest) tag
-  | tag == x = Arity $ length args
-  | otherwise = lookupTag (DataDeclaration xs dataType typeParams deriv : rest) tag
-
-
 -- UNIQUENESS --
 
 checkUniqueness :: Program a -> Program a
 checkUniqueness = checkUniqueConstructors . checkUniqueFunctions
 
 checkUniqueFunctions :: Program a -> Program a
-checkUniqueFunctions program@(Program funcs _ _ _ _) =
-  case findDuplicate Set.empty $ map name funcs of
+checkUniqueFunctions program@Program{..} =
+  case findDuplicate Set.empty $ map name functions of
     Nothing -> program
     Just (Name name) -> error $ "Duplicate function: " <> T.unpack name
 
 checkUniqueConstructors :: Program a -> Program a
-checkUniqueConstructors program@(Program _ datas _ _ _) =
-  case findDuplicate Set.empty . map fst $ concatMap declarations datas of
+checkUniqueConstructors program@Program{..} =
+  case findDuplicate Set.empty . map fst $ concatMap declarations dataDeclarations of
     Nothing -> program
     Just (Tag tag) -> error $ "Duplicate constructor: " <> T.unpack tag
 

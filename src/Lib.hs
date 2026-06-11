@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Lib
  ( execute
  , DebugFlag(..)
@@ -85,9 +87,7 @@ execute programText debugFlag compileFlag = do
 
             Interpreted -> do
               let
-                  toLambdaBinding (Function _ name args body) = (name, foldr patternToBinding body args)
-                  patternToBinding (PatternVar n) b = ExprLambda n b
-                  patternToBinding pat b = ExprLambda (Name "pat") (ExprCase (ExprVariable (Name "pat")) [Alternative pat b])
+                  toLambdaBinding Function{..} = (name, foldr (patternToLambda ()) body args)
                   prog = fmap (const ()) program
                   topLevelBindings = map toLambdaBinding $ functions prog
                   mainExpr = ExprVariable "main"
