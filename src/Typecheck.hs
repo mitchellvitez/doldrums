@@ -4,11 +4,13 @@
 
 module Typecheck
   ( typeInference
+  , typeInferenceWithoutIO
   , TypeCheckingException(..)
   , TypeInstantiationState(..)
   , HoleInfo(..)
   , Type(..)
   , reportHoles
+  , pprintType
   )
 where
 
@@ -460,16 +462,26 @@ typeHintToScheme hint =
   Scheme (typeHintFreeVars hint) [] (typeHintToType hint)
 
 typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
-typeInference program programText = do
+typeInference = typeInferenceWithIO True
+
+typeInferenceWithoutIO :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
+typeInferenceWithoutIO = typeInferenceWithIO False
+
+typeInferenceWithIO :: Bool -> Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
+typeInferenceWithIO requireIO program programText = do
   (runTypeInstantiation sigSchemes insts (dataDeclarations program) $ do
     (typ, subs, constraints) <- infer initialEnvironment $ singleExprForm program
     solveConstraints subs constraints
-    let ioUnit = TypeIO (TypeTagged (DataType "Unit"))
-        appliedTyp = apply subs typ
-    subs' <- unify (SourcePos "" (mkPos 1) (mkPos 1)) appliedTyp ioUnit
-    let finalSubs = combineSubstitutions subs' subs
-    modify $ \s -> s { typeInstantiationSubstitution = finalSubs }
-    pure $ apply subs' appliedTyp)
+    let appliedTyp = apply subs typ
+    if requireIO then do
+      let ioUnit = TypeIO (TypeTagged (DataType "Unit"))
+      subs' <- unify (SourcePos "" (mkPos 1) (mkPos 1)) appliedTyp ioUnit
+      let finalSubs = combineSubstitutions subs' subs
+      modify $ \s -> s { typeInstantiationSubstitution = finalSubs }
+      pure $ apply subs' appliedTyp
+    else do
+      modify $ \s -> s { typeInstantiationSubstitution = subs }
+      pure appliedTyp)
     `catch` typecheckingFailureHandler programText
   where
     sigSchemes = Map.fromList . map (fmap typeHintToScheme) $ typeSignatures program

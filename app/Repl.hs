@@ -4,6 +4,7 @@
 module Main where
 
 import Lib
+import Typecheck (pprintType)
 import Control.Exception (try, SomeException, displayException)
 import Control.Monad (void)
 import Control.Monad.State
@@ -58,10 +59,13 @@ handleCommand command rest = case command of
     _ -> liftIO $ putStrLn ":load takes a single filename arg"
   "r"; "reload" -> do
       ReplState{..} <- get
-      liftIO $ case loadedFile of
-        Nothing -> putStrLn "No file to reload"
-        Just (path, _) -> putStrLn $ "Reloaded " <> path
-  -- "t"; "type" -> _type
+      case loadedFile of
+        Nothing -> liftIO $ putStrLn "No file to reload"
+        Just (path, _) -> do
+          fileText <- liftIO $ T.pack <$> readFile path
+          modify (\s -> s { loadedFile = Just (path, fileText)})
+          liftIO $ putStrLn $ "Reloaded " <> path
+  "t"; "type" -> checkType rest
   "q"; "quit" -> liftIO $ putStrLn "Leaving Doldrums REPL" >> exitSuccess
   cmd -> unknownCommand cmd
 
@@ -82,10 +86,24 @@ helpMessage = unlines
 
 evalExpr :: String -> REPL ()
 evalExpr expr = do
-  result <- liftIO . try $ execute ("main = print $ " <> T.pack expr) NoDebugInfo Interpreted
+  ReplState{..} <- get
+  let loadedText = maybe "" snd loadedFile
+      programText = prelude <> loadedText <> "\nmain = print $ " <> T.pack expr
+  result <- liftIO . try $ executeFull programText NoDebugInfo Interpreted
   case result of
     Left (e :: SomeException) -> liftIO $ do
       putStrLn "An exception occurred:"
       putStrLn $ displayException e
-    Right _ -> pure ()
+    Right output -> liftIO $ putStrLn $ T.unpack output
 
+checkType :: String -> REPL ()
+checkType expr = do
+  ReplState{..} <- get
+  let loadedText = maybe "" snd loadedFile
+      programText = prelude <> loadedText <> "\nmain = " <> T.pack expr
+  result <- liftIO . try $ typecheckOnly programText NoDebugInfo
+  case result of
+    Left (e :: SomeException) -> liftIO $ putStrLn (displayException e)
+    Right types -> case types of
+      Left err -> liftIO . putStrLn . "Type error: " <> T.unpack err
+      Right typ -> liftIO . putStrLn . T.unpack $ pprintType typ
