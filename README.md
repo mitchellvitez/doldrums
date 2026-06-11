@@ -8,7 +8,7 @@
 
 Doldrums is a small, purely functional programming language with an emphasis on ease of top-to-bottom understanding. It's like a tiny Haskell. It's been a great way for me to learn about Haskell, compilers, parsing, typechecking, runtime evaluation, and more.
 
-The compiler is written in Haskell. Use `cabal run doldrums -- tour.dol` to run an example program, or `cabal test` to see what programs are currently working.
+The compiler is written in Haskell. Use `cabal run doldrums -- tour.dol` to run an example program, or `cabal run doldrums-test` to see what programs are currently working. `cabal haddock --open` will show the documentation.
 
 There are many examples of working programs in `test/expect/*.dol` (and expectedly broken ones in `test/broken/*.dol`).
 
@@ -54,7 +54,7 @@ seven = 7
 Every program has a main function. This is what runs when the program starts.
 ```hs
 main :: IO ()
-main = const 6 7
+main = print $ const 6 7
 ```
 
 ### The $ operator
@@ -111,7 +111,9 @@ Introduce user-defined types and values with `data` declarations. These are "sum
 
 ```hs
 data Bool = True | False
+
 data List a = Nil | Cons a (List a)
+
 data Either a b = Left a | Right b
 ```
 
@@ -124,15 +126,14 @@ data Color = Red | Green | Blue
 
 ### Case expressions
 
-Use `case` to pattern match on variables, literals, and user-defined constructors. The wildcard pattern `_` matches anything.
+Use `case` to pattern match on variables, literals, and user-defined constructors. The wildcard pattern `_` matches anything. (Note that hanging indentation is supported here, and on other syntax like `let` binding blocks.)
 
 ```hs
 fib :: Int -> Int
-fib n =
-  case n of
-    0 -> 1
-    1 -> 1
-    _ -> fib (n - 1) + fib (n - 2)
+fib n = case n of
+  0 -> 1
+  1 -> 1
+  _ -> fib (n - 1) + fib (n - 2)
 ```
 
 Alternatively, use multiple top-level definitions with different pattern matches:
