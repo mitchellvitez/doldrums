@@ -1,0 +1,7 @@
+-- EXPECT Goodbye!
+
+main :: IO ()
+main = do
+  pure ()
+  putStrLn "Goodbye!"
+  pure ()

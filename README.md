@@ -76,7 +76,7 @@ which is also equivalent to using `.` for function composition
 main = f . g $ h x
 ```
 
-### Let expressions
+### Let and where expressions
 
 You can define variables to be used in an expression with `let`...`in`
 ```hs
@@ -96,6 +96,14 @@ in
   a - b * c + d
 ```
 
+Use the `where` keyword if you want definitions that come after an expression. 
+```hs
+f = x + y
+  where
+    x = y * 2
+    y = 7
+```
+
 ### Algebraic datatypes
 
 Introduce user-defined types and values with `data` declarations. These are "sum of products" algebraic types, allowing type variables.
@@ -104,6 +112,13 @@ Introduce user-defined types and values with `data` declarations. These are "sum
 data Bool = True | False
 data List a = Nil | Cons a (List a)
 data Either a b = Left a | Right b
+```
+
+`deriving` clauses are supported for some common typeclasses. They do code generation to write the `instance` declaration automatically.
+
+```hs
+data Color = Red | Green | Blue
+  deriving (Eq, Ord, Show)
 ```
 
 ### Case expressions
@@ -117,6 +132,34 @@ fib n =
     0 -> 1
     1 -> 1
     _ -> fib (n - 1) + fib (n - 2)
+```
+
+Alternatively, use multiple top-level definitions with different pattern matches:
+
+```hs
+fib :: Int -> Int
+fib 0 = 1
+fib 1 = 1
+fib n = fib (n - 1) + fib (n - 2)
+```
+
+`LambdaCase` is supported as well. These are equivalent:
+
+```hs
+f x = case x of ...
+
+f = \case ...
+```
+
+### Guards
+
+Guard clauses provide a convenient way to evaluate multiple boolean conditions. `otherwise` is a synonym for `True`, defined in the Doldrums Prelude.
+
+```hs
+abs n
+  | n > 0 = n
+  | n < 0 = -n
+  | otherwise = 0
 ```
 
 ### Typeclasses
@@ -164,6 +207,66 @@ Square bracket list syntax is supported for expressions, pattern matches, and ty
 (x:xs)
 [Int]
 [1,3..10]
+```
+
+### Records
+
+Record syntax is supported in data declarations, producing accessor functions.
+
+```hs
+data Person = Person { name :: String, age :: Int }
+```
+
+Record fields can be accessed with `OverloadedRecordDot`-style dot notation, or with `RecordWildCards`-style expansions.
+
+```hs
+somePerson.name
+Person{..}
+```
+
+Record update syntax works too:
+
+```hs
+somePerson { age = age + 1 }
+```
+
+### Typed holes
+
+Variable names starting with `_` are typed holes. The typechecker will call out their locations and possible types. These can be useful when writing programs as a way to make partial progress.
+
+```hs
+_
+_myTypedHole
+x + _y
+```
+
+### Backticks for infix functions
+
+Backticks let us use normal prefix functions as infix operators.
+
+```hs
+x = 10 `mod` 2
+```
+
+### Operator sections
+
+Operator sections let use apply either of the arguments to an infix operator.
+
+```hs
+(+1)
+(1+)
+```
+
+### Do notation
+
+Use the `do` keyword for multi-line expressions that desugar to usage of the (>>=) bind operator.
+
+```
+main :: IO ()
+main = do
+  putStrLn "Hello, what's your name?"
+  name <- getLine
+  putStrLn $ "Nice to meet you, " <> name
 ```
 
 ## Parsing
