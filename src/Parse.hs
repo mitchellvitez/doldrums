@@ -788,7 +788,7 @@ parseTypeHintSingle = do
   case (first, rest) of
     (TypeHintConstructor dt, args) -> pure $ TypeHintApp dt args
     (TypeHintVar _, []) -> pure first
-    (TypeHintVar _, _:_) -> fail "Type variable applied to arguments"
+    (TypeHintVar n, args) -> pure $ TypeHintApp (DataType (unName n)) args
     _ -> pure first
 
 parseTypeHintAtomic :: Parser TypeHint

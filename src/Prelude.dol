@@ -71,16 +71,16 @@ class Semigroup a where
 class Semigroup a => Monoid a where
   mempty :: a
 
--- class Functor f where
---   (<$>) :: (a -> b) -> f a -> f b
---   fmap :: (a -> b) -> f a -> f b
+class Functor f where
+  (<$>) :: (a -> b) -> f a -> f b
+  fmap :: (a -> b) -> f a -> f b
 
--- class Functor f => Applicative f where
---   pure :: a -> f a
---   (<*>) :: f (a -> b) -> f a -> f b
+class Functor f => Applicative f where
+  pure :: a -> f a
+  (<*>) :: f (a -> b) -> f a -> f b
 
--- class Applicative m => Monad m where
---   (>>=) :: m a -> (a -> m b) -> m b
+class Applicative m => Monad m where
+  (>>=) :: m a -> (a -> m b) -> m b
 
 -- standalone type signatures for built-ins
 ($) :: (a -> b) -> a -> b
