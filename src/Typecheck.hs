@@ -37,15 +37,16 @@ import System.Exit (exitFailure)
 putTextLn :: Text -> IO ()
 putTextLn = putStrLn . Text.unpack
 
+-- | The full list of Doldrums types
 data Type
-  = TypeInt
-  | TypeDouble
-  | TypeString
-  | TypeTagged DataType
-  | Type :-> Type
-  | TypeIO Type
-  | TypeVariable Name
-  | TypeAp Type Type
+  = TypeInt -- ^ (unbounded) integers
+  | TypeDouble -- ^ double-precision floating point numbers
+  | TypeString -- ^ strings, represented as Haskell @Text@ values (blobs of unicode bytes)
+  | TypeTagged DataType -- ^ user-created datatypes, e.g. @Bool@, @Maybe@
+  | Type :-> Type -- ^ the function type, e.g. @a -> b@, @String -> Int@
+  | TypeIO Type -- ^ the @IO@ wrapper type in @IO a@
+  | TypeVariable Name -- ^ type variable, e.g. @a47@, @myType@
+  | TypeAp Type Type -- ^ type application, e.g. @m a@, @IO ()@, @Either a b@
   deriving (Eq, Show, Generic)
 
 infixr 6 :->
@@ -74,7 +75,7 @@ instance Types Scheme where
   apply subs (Scheme vars constraints t) =
     Scheme vars (apply subs constraints) $ apply (foldr Map.delete subs vars) t
 
--- map from variables to their types, for substituting
+-- | map from type variable names to the types they represent
 type Substitution = Map Name Type
 
 tshow :: Show a => a -> Text
@@ -125,7 +126,10 @@ instance Types a => Types [a] where
   freeTypeVariable list = foldMap freeTypeVariable list
   apply subs = map $ apply subs
 
-data TypeCheckingException = TypeCheckingException SourcePos Text
+-- | Indicates a typechecking failure (commonly, a type mismatch) along with where it was in the source via its 'SourcePos'
+data TypeCheckingException = TypeCheckingException
+  SourcePos -- ^ source code location where this type error was found
+  Text -- ^ description of the typechecking failure
   deriving (Eq, Show)
 instance Exception TypeCheckingException
 
@@ -135,18 +139,20 @@ data TypeInstantiationEnv = TypeInstantiationEnv
   , envDataDeclarations :: [DataDeclaration]
   }
 
+-- | Representation of a typed hole (@_@)
 data HoleInfo = HoleInfo
-  { holeName :: Name
-  , holePos :: SourcePos
-  , holeTypeVar :: Name
+  { holeName :: Name -- ^ typed holes begin with @_@ but can have a longer name like @_myTypedHole@
+  , holePos :: SourcePos -- ^ location in the source code where this typed hole is found
+  , holeTypeVar :: Name -- ^ the type variable assigned to this hole, useful for unification
   }
   deriving Show
 
+-- | High-level information useful for debugging the typechecker
 data TypeInstantiationState = TypeInstantiationState
-  { typeInstantiationSupply :: Int
-  , typeInstantiationSubstitution :: Substitution
-  , typeConstraints :: [Constraint]
-  , typedHoles :: [HoleInfo]
+  { typeInstantiationSupply :: Int -- ^ counter that tracks free type variables
+  , typeInstantiationSubstitution :: Substitution -- ^ tracks which type a type variable stands for
+  , typeConstraints :: [Constraint] -- ^ the constraint environment of a type
+  , typedHoles :: [HoleInfo] -- ^ which typed holes exist
   }
   deriving Show
 
@@ -390,6 +396,7 @@ solveConstraints subs constraints = do
 resolveHoles :: Substitution -> [HoleInfo] -> [(Name, SourcePos, Type)]
 resolveHoles subs = map (\(HoleInfo n p tv) -> (n, p, apply subs (TypeVariable tv)))
 
+-- | After unification with a 'Program' containing typed holes, list those holes' positions in the source code, with some context and their (partially) discovered types
 reportHoles :: Text -> Substitution -> [HoleInfo] -> IO ()
 reportHoles programText subs holes = do
   let resolved = resolveHoles subs holes
@@ -412,6 +419,7 @@ reportHoles programText subs holes = do
       putTextLn $ textLines !! lineNum
     putStrLn $ line <> "^"
 
+-- | Convert a Doldrums 'Type' to human-readable form
 tshowType :: Type -> Text
 tshowType = \case
   TypeInt -> "Int"
@@ -473,9 +481,15 @@ typeHintToScheme (TypeHintConstraint constraints body) =
 typeHintToScheme hint =
   Scheme (typeHintFreeVars hint) [] (typeHintToType hint)
 
+-- | Standard typechecking that typechecks a program as a single @main@ expression of type @IO ()@
+--
+-- Returns the final 'TypeInstantiationState' for debug information, and a 'Type' if successful or a 'TypecheckingException' if not
 typeInference :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInference = typeInferenceWithIO True
 
+-- | Typechecks a program but doesn't require that it matches @IO ()@. Useful in the REPL
+--
+-- Returns the final 'TypeInstantiationState' for debug information, and a 'Type' if successful or a 'TypecheckingException' if not
 typeInferenceWithoutIO :: Program SourcePos -> Text -> IO (Either Text Type, TypeInstantiationState)
 typeInferenceWithoutIO = typeInferenceWithIO False
 

@@ -1,4 +1,6 @@
-module STG where
+module STG
+  (compileStg, StgExpr(..))
+where
 
 import Language
 import FixAst (singleExprForm)
@@ -21,11 +23,12 @@ data StgAtom
   | StgAtomLit StgLiteral
   deriving (Show)
 
+-- | Lowered representation of 'Expr' for the spineless tagless G-machine
 data StgExpr
-  = StgAtom StgAtom
-  | StgApp StgName [StgAtom]
-  | StgLet [StgBinding] StgExpr
-  | StgCase StgAtom [StgAlt]
+  = StgAtom StgAtom -- ^ a variable or literal value
+  | StgApp StgName [StgAtom] -- ^ function application of a variable to zero or more arguments
+  | StgLet [StgBinding] StgExpr -- ^ @let@ with many bindings defined in the body of some final 'StgExpr'
+  | StgCase StgAtom [StgAlt] -- ^ @case@ matching on a variable or literal, and producing one of many alternatives
   deriving (Show)
 
 data StgBinding = StgBinding
@@ -38,6 +41,7 @@ data StgBinding = StgBinding
 data StgAlt = StgAlt [StgBinding] StgExpr
   deriving (Show)
 
+-- | Lower a 'Program' to STG (spineless tagless G-machine) representation. This is an intermediate step between 'Expr' and LLVM IR
 compileStg :: Program a -> StgExpr
 compileStg program =
   let prog = fmap (const ()) program

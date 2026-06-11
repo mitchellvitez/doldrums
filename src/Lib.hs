@@ -32,17 +32,21 @@ debug debugFlag label action = when (debugFlag == IncludeDebugInfo) $ do
   putTextLn $ "\n----- " <> label <> " -----"
   action
 
+-- | Flag for whether to print out additional information, including the input source code, 'Program' AST, graphviz AST representation, typechecking substitutions and instantiations, STG and LLVM (if compiled). If 'NoDebugInfo', only the program's final output will be printed
 data DebugFlag = IncludeDebugInfo | NoDebugInfo
   deriving (Eq, Show)
 
+-- | Flag for whether to run in compiled mode (generate STG and LLVM) or interpreted mode (evaluate the AST directly)
 data CompileFlag = Compiled | Interpreted
   deriving (Eq, Show)
 
+-- | Given source code @Text@, runs a Doldrums program with the given flags, with the standard Prelude definitions loaded
 execute :: Text -> DebugFlag -> CompileFlag -> IO Text
 execute programText debugFlag compileFlag = do
   preludeFile <- readFile "src/Prelude.dol"
   executeFull (pack preludeFile <> programText) debugFlag compileFlag
 
+-- | Given source code @Text@, runs a Doldrums program with the given flags, without any Prelude definitions loaded
 executeFull :: Text -> DebugFlag -> CompileFlag -> IO Text
 executeFull programText debugFlag compileFlag = do
   debug debugFlag "INPUT" . mapM_ putTextLn $ Text.lines programText
@@ -99,6 +103,7 @@ executeFull programText debugFlag compileFlag = do
               methodEnv = methodEnvFromInstances (instanceDeclarations prog) typeMap
           interpret topLevelBindings methodEnv typeMap mainExpr
 
+-- | Given source code @Text@, typechecks a Doldrums program, but doesn't actually execute it
 typecheckOnly :: Text -> DebugFlag -> IO (Either Text Type)
 typecheckOnly programText debugFlag = do
   debug debugFlag "INPUT" . mapM_ putTextLn $ Text.lines programText

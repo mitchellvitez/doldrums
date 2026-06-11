@@ -69,9 +69,6 @@ parseEitherTopLevel =
   try (InstanceDecl <$> parseInstanceDeclaration) <|>
       (Func <$> parseFunction)
 
-symbol :: Text -> Parser ()
-symbol = void . L.symbol' spaceConsumer
-
 parseClassDeclaration :: Parser TypeclassDeclaration
 parseClassDeclaration = do
   lexeme $ string "class"
@@ -329,12 +326,6 @@ backtickOp :: Operator Parser Expr
 backtickOp = InfixL $ do
   name <- try $ lexeme (char '`') *> parseName <* lexeme (char '`')
   pure $ \l r -> ExprApplication (ExprApplication (ExprVariable name) l) r
-
-prefixOp :: Text -> Operator Parser Expr
-prefixOp name = Prefix $ prefixOpAST name <$ (lexemeNewline . try) (string name)
-
-prefixOpAST :: Text -> Expr -> Expr
-prefixOpAST name expr = ExprApplication (ExprVariable (Name name)) expr
 
 parseLiteral :: Parser Literal
 parseLiteral =
@@ -754,12 +745,6 @@ parseConstrainedTypeHint = do
   lexeme $ string "=>"
   body <- parseTypeHint
   pure $ TypeHintConstraint constraints body
-
-parseSingleConstraintInline :: Parser (Name, TypeHint)
-parseSingleConstraintInline = do
-  name <- Name . unTag <$> parseTag
-  arg <- parseTypeHintSingle
-  pure (name, arg)
 
 parseSignatureName :: Parser Name
 parseSignatureName =
