@@ -82,6 +82,20 @@ class Functor f => Applicative f where
 class Applicative m => Monad m where
   (>>=) :: m a -> (a -> m b) -> m b
 
+data IO a = IO a
+
+instance Functor IO
+
+instance Applicative IO
+
+instance Monad IO where
+  (>>=) (IO x) f = f x
+
+fmap :: (a -> b) -> IO a -> IO b
+fmap f x = do
+  y <- x
+  pure $ f y
+
 -- standalone type signatures for built-ins
 ($) :: (a -> b) -> a -> b
 (.) :: (b -> c) -> (a -> b) -> a -> c

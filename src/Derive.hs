@@ -53,7 +53,7 @@ buildInstanceTypes DataDeclaration{..} =
   let args = map TypeHintVar typeParameters
   in case args of
     [] -> [TypeHintConstructor dataType]
-    _  -> [TypeHintApp dataType args]
+    _  -> [TypeHintApp (TypeHintConstructor dataType) args]
 
 -- | Make a locally-unique name for a constructor argument on the x-side
 xArg :: Tag -> Int -> Name

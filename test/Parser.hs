@@ -204,11 +204,11 @@ main = f (double 4)
 
     it "parseListTypeHint" $ do
       testParser parseTypeHint "[Int]"
-        (TypeHintApp (DataType "List") [TypeHintInt])
+        (TypeHintApp (TypeHintConstructor (DataType "List")) [TypeHintInt])
       testParser parseTypeHint "[a]"
-        (TypeHintApp (DataType "List") [TypeHintVar "a"])
+        (TypeHintApp (TypeHintConstructor (DataType "List")) [TypeHintVar "a"])
       testParser parseTypeHint "[List Int]"
-        (TypeHintApp (DataType "List") [TypeHintApp (DataType "List") [TypeHintInt]])
+        (TypeHintApp (TypeHintConstructor (DataType "List")) [TypeHintApp (TypeHintConstructor (DataType "List")) [TypeHintInt]])
 
     it "parses a guarded function" $ do
       testProgramParser parseProgram [r|

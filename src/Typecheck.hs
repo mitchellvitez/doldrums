@@ -10,7 +10,7 @@ module Typecheck
   , HoleInfo(..)
   , Type(..)
   , reportHoles
-  , pprintType
+  , tshowType
   )
 where
 
@@ -45,6 +45,7 @@ data Type
   | Type :-> Type
   | TypeIO Type
   | TypeVariable Name
+  | TypeAp Type Type
   deriving (Eq, Show, Generic)
 
 infixr 6 :->
@@ -110,12 +111,14 @@ instance Types Type where
   freeTypeVariable (TypeTagged _) = Set.empty
   freeTypeVariable (TypeIO a) = freeTypeVariable a
   freeTypeVariable (a :-> b) = freeTypeVariable a `Set.union` freeTypeVariable b
+  freeTypeVariable (TypeAp a b) = freeTypeVariable a `Set.union` freeTypeVariable b
 
   apply subs (TypeVariable name) = case Map.lookup name subs of
     Nothing -> TypeVariable name
     Just t -> t
   apply subs (a :-> b) = apply subs a :-> apply subs b
   apply subs (TypeIO a) = TypeIO (apply subs a)
+  apply subs (TypeAp a b) = TypeAp (apply subs a) (apply subs b)
   apply _ t = t
 
 instance Types a => Types [a] where
@@ -193,6 +196,12 @@ unify sourcePos (TypeTagged (DataType a)) (TypeTagged (DataType b)) =
   if a == b
   then pure emptySubstitution
   else throwTypeCheckingException sourcePos a b
+unify sourcePos (TypeAp a b) (TypeAp c d) = do
+  s1 <- unify sourcePos a c
+  s2 <- unify sourcePos (apply s1 b) (apply s1 d)
+  pure $ s1 `combineSubstitutions` s2
+unify sourcePos (TypeAp (TypeVariable u) _) t = varBind sourcePos u t
+unify sourcePos t (TypeAp (TypeVariable u) _) = varBind sourcePos u t
 unify sourcePos a b = throwTypeCheckingException sourcePos a b
 
 throwTypeCheckingException :: (Show a, Show b) => SourcePos -> a -> b -> TypeInstantiation Substitution
@@ -389,7 +398,7 @@ reportHoles programText subs holes = do
       [ "Found typed hole `"
       , Text.unpack $ unName name
       , " :: "
-      , Text.unpack $ pprintType ty
+      , Text.unpack $ tshowType ty
       , "` in the expression below starting at "
       , show . unPos $ sourceLine sourcePos
       , ":"
@@ -403,15 +412,16 @@ reportHoles programText subs holes = do
       putTextLn $ textLines !! lineNum
     putStrLn $ line <> "^"
 
-pprintType :: Type -> Text
-pprintType = \case
+tshowType :: Type -> Text
+tshowType = \case
   TypeInt -> "Int"
   TypeDouble -> "Double"
   TypeString -> "String"
   TypeTagged (DataType n) -> n
-  TypeIO a -> "IO " <> pprintType a
+  TypeIO a -> "IO " <> tshowType a
   TypeVariable (Name n) -> n
-  a :-> b -> pprintType a <> " -> " <> pprintType b
+  TypeAp a b -> tshowType a <> " " <> tshowType b
+  a :-> b -> tshowType a <> " -> " <> tshowType b
 
 typecheckingFailureHandler :: Text -> TypeCheckingException -> IO (Either Text Type, TypeInstantiationState)
 typecheckingFailureHandler programText (TypeCheckingException sourcePos msg) = do
@@ -439,7 +449,9 @@ typeHintToType = \case
   TypeHintString -> TypeString
   TypeHintVar n -> TypeVariable n
   TypeHintConstructor dt -> TypeTagged dt
-  TypeHintApp dt _ -> TypeTagged dt
+  TypeHintApp (TypeHintConstructor dt) _ -> TypeTagged dt
+  TypeHintApp (TypeHintVar n) args -> foldl TypeAp (TypeVariable n) (map typeHintToType args)
+  TypeHintApp first args -> foldl TypeAp (typeHintToType first) (map typeHintToType args)
   a :~> b -> typeHintToType a :-> typeHintToType b
   TypeHintConstraint _ body -> typeHintToType body
 
@@ -447,7 +459,7 @@ typeHintFreeVars :: TypeHint -> [Name]
 typeHintFreeVars = \case
   TypeHintVar n -> [n]
   a :~> b -> typeHintFreeVars a <> typeHintFreeVars b
-  TypeHintApp _ args -> concatMap typeHintFreeVars args
+  TypeHintApp first args -> typeHintFreeVars first <> concatMap typeHintFreeVars args
   TypeHintConstraint constraints body ->
     concatMap (typeHintFreeVars . snd) constraints <> typeHintFreeVars body
   _ -> []

@@ -54,7 +54,8 @@ typeHintToTags :: TypeHint -> DataTypeMap -> [Name]
 typeHintToTags TypeHintInt _ = [Name "Int"]
 typeHintToTags TypeHintDouble _ = [Name "Double"]
 typeHintToTags TypeHintString _ = [Name "String"]
-typeHintToTags (TypeHintApp dt _) _ = [Name $ unDataType dt]
+typeHintToTags (TypeHintApp (TypeHintConstructor dt) _) _ = [Name $ unDataType dt]
+typeHintToTags (TypeHintApp (TypeHintVar _) _) _ = []
 typeHintToTags (TypeHintConstructor dt) _ = [Name $ unDataType dt]
 typeHintToTags (TypeHintVar _) _ = []
 typeHintToTags _ _ = []
@@ -259,7 +260,6 @@ whnf (ExprApplication (ExprApplication (ExprVariable (Name op)) a) b) =
     "/=" -> eqNeqFallback "/=" a b
     -- compare: try primitive first, then method dispatch
     "compare" -> compareFallback a b
-    ">>=" -> bindOp a b
     "writeFile" -> writeFileOp a b
     _    -> doMethodBinaryOp op a b
 
@@ -433,7 +433,13 @@ applyValue (ValMethodDispatch name dispatchTable) arg = do
   case Map.lookup tag dispatchTable of
     Just body -> do
       bodyVal <- whnf body
-      applyValue bodyVal arg
+      s <- get
+      let dispatchName = Name "__dispatch_arg__"
+          tid = nextId s
+          newHeap = IntMap.insert (unThunkId tid) (Done argVal) (heap s)
+          newEnv = Map.insert dispatchName tid (env s)
+      put s { heap = newHeap, nextId = ThunkId (unThunkId tid + 1), env = newEnv }
+      applyValue bodyVal (ExprVariable dispatchName)
     Nothing  -> do
       throw $ RuntimeException $
         "No matching instance for method " <> unName name
@@ -545,18 +551,13 @@ roundPrim a = do
     ValLiteral (LiteralDouble d) -> pure . ValLiteral . LiteralInt $ round d
     _ -> throw $ RuntimeException "round expects a Double"
 
-bindOp :: Expr -> Expr -> Eval Value
-bindOp m f = do
-  valM <- whnf m
-  valF <- whnf f
-  currentEnv <- gets env
-  let tempName = Name "__bind_result__"
+wrapInIO :: Value -> Eval Value
+wrapInIO val = do
   s <- get
   let tid = nextId s
-      newHeap = IntMap.insert (unThunkId tid) (Done valM) (heap s)
-      newEnv = Map.insert tempName tid currentEnv
+      newHeap = IntMap.insert (unThunkId tid) (Done val) (heap s)
   put s { heap = newHeap, nextId = ThunkId (unThunkId tid + 1) }
-  withEnv newEnv $ applyValue valF (ExprVariable tempName)
+  pure $ ValApply (ValConstructor (Tag "IO") (Arity 1)) tid
 
 writeFileOp :: Expr -> Expr -> Eval Value
 writeFileOp path contents = do
@@ -565,7 +566,7 @@ writeFileOp path contents = do
   case (valPath, valContents) of
     (ValLiteral (LiteralString p), ValLiteral (LiteralString c)) -> do
       liftIO $ writeFile (unpack p) (unpack c)
-      return $ ValConstructor (Tag "Unit") (Arity 0)
+      wrapInIO $ ValConstructor (Tag "Unit") (Arity 0)
     _ -> throw $ RuntimeException "writeFile requires two strings"
 
 printOp :: Expr -> Eval Value
@@ -574,7 +575,7 @@ printOp arg = do
   str <- unpackValue val
   modify $ \s -> s { outputLines = str : outputLines s }
   liftIO $ putStrLn (unpack str)
-  pure $ ValConstructor (Tag "Unit") (Arity 0)
+  wrapInIO $ ValConstructor (Tag "Unit") (Arity 0)
 
 putStrLnOp :: Expr -> Eval Value
 putStrLnOp arg = do
@@ -583,7 +584,7 @@ putStrLnOp arg = do
     ValLiteral (LiteralString str) -> do
       modify $ \st -> st { outputLines = str : outputLines st }
       liftIO $ putStrLn (unpack str)
-      return $ ValConstructor (Tag "Unit") (Arity 0)
+      wrapInIO $ ValConstructor (Tag "Unit") (Arity 0)
     _ -> throw $ RuntimeException "putStrLn requires a String"
 
 readFileOp :: Expr -> Eval Value
@@ -592,11 +593,13 @@ readFileOp arg = do
   case val of
     ValLiteral (LiteralString path) -> do
       contents <- liftIO $ readFile (unpack path)
-      return $ ValLiteral (LiteralString (pack contents))
+      wrapInIO $ ValLiteral (LiteralString (pack contents))
     _ -> throw $ RuntimeException "readFile requires a String"
 
 pureOp :: Expr -> Eval Value
-pureOp arg = whnf arg
+pureOp arg = do
+  val <- whnf arg
+  wrapInIO val
 
 unpackValue :: Value -> Eval Text
 unpackValue (ValLiteral (LiteralInt n)) = pure $ tshow n

@@ -88,8 +88,7 @@ parseInstanceDeclaration = do
   context <- try parseContext <|> pure []
   className <- Name . unTag <$> parseTag
   instTypes <- many parseTypeHintSingle
-  lexeme $ string "where"
-  defs <- try (manyIndented parseMethodDef) <|> fmap pure parseMethodDef
+  defs <- try (lexeme $ string "where" *> (try (manyIndented parseMethodDef) <|> fmap pure parseMethodDef <|> pure [])) <|> pure []
   pure $ InstanceDeclaration context className instTypes defs
 
 parseContext :: Parser [(Name, TypeHint)]
@@ -786,10 +785,8 @@ parseTypeHintSingle = do
   first <- parseTypeHintAtomic
   rest <- many parseTypeHintAtomic
   case (first, rest) of
-    (TypeHintConstructor dt, args) -> pure $ TypeHintApp dt args
-    (TypeHintVar _, []) -> pure first
-    (TypeHintVar n, args) -> pure $ TypeHintApp (DataType (unName n)) args
-    _ -> pure first
+    (_, []) -> pure first
+    _ -> pure $ TypeHintApp first rest
 
 parseTypeHintAtomic :: Parser TypeHint
 parseTypeHintAtomic =
@@ -812,14 +809,14 @@ parseParenTypeHint = do
       _ -> do
         let n = length args
             dt = DataType $ T.pack $ "Tuple" ++ show n
-        pure $ TypeHintApp dt args
+        pure $ TypeHintApp (TypeHintConstructor dt) args
 
 parseListTypeHint :: Parser TypeHint
 parseListTypeHint = do
   lexeme $ char '['
   hint <- parseTypeHint
   lexeme $ char ']'
-  pure $ TypeHintApp (DataType "List") [hint]
+  pure $ TypeHintApp (TypeHintConstructor (DataType "List")) [hint]
 
 typeHintLiteral :: Text -> TypeHint -> Parser TypeHint
 typeHintLiteral name hint = do

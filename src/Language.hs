@@ -124,7 +124,7 @@ data TypeHint
   | TypeHintString
   | TypeHintVar Name
   | TypeHintConstructor DataType
-  | TypeHintApp DataType [TypeHint]
+  | TypeHintApp TypeHint [TypeHint]
   | TypeHint :~> TypeHint
   | TypeHintConstraint [(Name, TypeHint)] TypeHint
   deriving (Eq, Show)

@@ -4,7 +4,7 @@
 module Main where
 
 import Lib
-import Typecheck (pprintType)
+import Typecheck (tshowType)
 import Control.Exception (try, SomeException, displayException)
 import Control.Monad (void)
 import Control.Monad.State
@@ -106,4 +106,4 @@ checkType expr = do
     Left (e :: SomeException) -> liftIO $ putStrLn (displayException e)
     Right types -> case types of
       Left err -> liftIO . putStrLn $ "Type error: " <> T.unpack err
-      Right typ -> liftIO . putStrLn . T.unpack $ pprintType typ
+      Right typ -> liftIO . putStrLn . T.unpack $ tshowType typ
