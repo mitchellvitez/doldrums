@@ -53,6 +53,7 @@ seven = 7
 
 Every program has a main function. This is what runs when the program starts.
 ```hs
+main :: IO ()
 main = const 6 7
 ```
 
@@ -156,6 +157,7 @@ f = \case ...
 Guard clauses provide a convenient way to evaluate multiple boolean conditions. `otherwise` is a synonym for `True`, defined in the Doldrums Prelude.
 
 ```hs
+abs n :: Num a => a -> a
 abs n
   | n > 0 = n
   | n < 0 = -n
@@ -250,18 +252,20 @@ x = 10 `mod` 2
 
 ### Operator sections
 
-Operator sections let use apply either of the arguments to an infix operator.
+Operator sections let use apply any combination of the arguments to an infix operator.
 
 ```hs
-(+1)
-(1+)
+(+1) -- right
+(1+) -- left
+1+1  -- both
+(+)  -- neither
 ```
 
 ### Do notation
 
 Use the `do` keyword for multi-line expressions that desugar to usage of the (>>=) bind operator.
 
-```
+```hs
 main :: IO ()
 main = do
   putStrLn "Hello, what's your name?"
