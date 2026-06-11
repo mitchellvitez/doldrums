@@ -105,5 +105,5 @@ checkType expr = do
   case result of
     Left (e :: SomeException) -> liftIO $ putStrLn (displayException e)
     Right types -> case types of
-      Left err -> liftIO . putStrLn . "Type error: " <> T.unpack err
+      Left err -> liftIO . putStrLn $ "Type error: " <> T.unpack err
       Right typ -> liftIO . putStrLn . T.unpack $ pprintType typ
