@@ -84,17 +84,18 @@ class Applicative m => Monad m where
 
 data IO a = IO a
 
-instance Functor IO
+instance Functor IO where
+  fmap f x = do
+    y <- x
+    pure $ f y
+  (<$>) f x = do
+    y <- x
+    pure $ f y
 
 instance Applicative IO
 
 instance Monad IO where
   (>>=) (IO x) f = f x
-
-fmap :: (a -> b) -> IO a -> IO b
-fmap f x = do
-  y <- x
-  pure $ f y
 
 -- standalone type signatures for built-ins
 ($) :: (a -> b) -> a -> b
@@ -151,6 +152,13 @@ filter _ [] = []
 filter pred (x:xs) = case pred x of
   True -> x : filter pred xs
   False -> filter pred xs
+
+class Foldable f where
+  foldr :: (a -> b -> b) -> b -> f a -> b
+
+instance Foldable List where
+  foldr f b [] = b
+  foldr f b (x:xs) = f x $ foldr f b xs
 
 head :: List a -> Maybe a
 head [] = Nothing
