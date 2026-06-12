@@ -45,7 +45,7 @@ const :: a -> b -> a
 const x y = x
 ```
 
-You can define constants using a "function" with no arguments.
+Define constants using a "function" with no arguments.
 ```hs
 seven :: Int
 seven = 7
@@ -59,7 +59,7 @@ main = print $ const 6 7
 
 ### The $ operator
 
-Because it has the lowest precedence, you can use `$` to replace parentheses in certain situations, for cleaner code. For example, 
+Because it has the lowest precedence, we can use `$` to replace parentheses in certain situations, for cleaner code. For example, 
 
 ```hs
 main = f (g (h x))
@@ -79,7 +79,7 @@ main = f . g $ h x
 
 ### Let and where expressions
 
-You can define variables to be used in an expression with `let`...`in`
+Define variables to be used in an expression with `let`...`in`
 ```hs
 let
   n = 0
@@ -97,7 +97,7 @@ in
   a - b * c + d
 ```
 
-Use the `where` keyword if you want definitions that come after an expression. 
+Use the `where` keyword for definitions that come after an expression. 
 ```hs
 f = x + y
   where
@@ -253,7 +253,7 @@ x = 10 `mod` 2
 
 ### Operator sections
 
-Operator sections let use apply any combination of the arguments to an infix operator.
+Operator sections let us apply any combination of the arguments to an infix operator.
 
 ```hs
 (+1) -- right
@@ -296,7 +296,7 @@ func x = x + 7
 main = func "hello"
 ```
 
-So will this one, since you can't apply literals:
+So will this one, since integer literals can't be applied as functions:
 
 ```hs
 main = 1 2 3
